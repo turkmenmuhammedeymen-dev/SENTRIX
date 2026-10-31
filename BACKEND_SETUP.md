@@ -12,17 +12,14 @@ Parse'ın `_User` ve `_Session` sınıfları yeniden oluşturulmaz. `_User` yaln
 
 Deploy sonrası `sentrixHealth`, kayıt/giriş, alan adı oluşturma/listeleme/doğrulama ve özet fonksiyonlarını test edin. Cloud Job kodda tanımlanır; otomatik periyodik çalışması için Back4App panelinde uygun zamanlama ayrıca yapılandırılmalıdır.
 
-## 3. Alan adı doğrulama
-Panelin ürettiği `sentrix-verification=TOKEN` metnini şu dosyaya aynen yükleyin:
-`https://alanadiniz/.well-known/sentrix-verification.txt`
-Doğrulama yalnızca HTTPS üzerinden yapılır. Başarılı doğrulama olmadan izleme kodu verilmez.
+## 3. Mülk ekleme ve dosya tabanlı sahiplik doğrulama
+Panelden eklenen her mülk için sunucu benzersiz bir `.well-known/sentrix-verify-<siteId>.txt` dosya adı ve o mülke özel rastgele doğrulama içeriği üretir. Dosya tarayıcıdan otomatik indirilir. Kullanıcı dosyayı kendi GitHub Pages/Vercel projesindeki `.well-known/` klasörüne, verilen dosya adıyla ekleyip commit/publish eder. Ardından SENTRIX'te **Dosyayı kontrol et** seçeneğine basar.
 
-### Eşzamanlı alan adı sahiplenme koruması
-Cloud Code tarafındaki sorgu-önce-kaydet kontrolü tek başına eşzamanlı isteklerde atomik değildir. Back4App'in kullandığı MongoDB veritabanında **SxDomain.host için unique index** oluşturulmalıdır. MongoDB yönetim konsolunda, doğru database seçiliyken:
-```javascript
-db.SxDomain.createIndex({ host: 1 }, { unique: true, name: "uniq_sentrix_domain_host" })
-```
-Mevcut tekrarlı host kayıtları varsa indeks oluşturulmadan önce temizlenmelidir. İndeks oluşturma yetkisi/erişimi Back4App planına ve veritabanı yönetim yöntemine bağlıdır. Bu indeks kurulmadan mutlak tekillik garantisi verilmez.
+Cloud Code yalnızca o mülkün kendisine ait beklenen HTTPS dosya yolunu okur ve içeriği birebir karşılaştırır. Dosya yoksa veya içerik eşleşmiyorsa işlem başarısız olur ve mülk doğrulanmamış kalır. Başarılıysa mülkün durumu doğrulanır ve tracker snippet'i açılır. Her mülkün siteId'si ve doğrulama tokenı farklıdır; dosyalar birbirinin yerine kullanılamaz.
+
+GitHub deposunda `.well-known` klasörü yoksa oluşturun. Dosyayı depo köküne değil, bu klasöre ekleyin. Yayınlanan adresin HTTPS üzerinden erişilebilir olduğunu kontrol edin.
+
+Panelde **Mülklerim** listesinden bir mülke tıklayın. Mülk çalışma alanında sahiplik durumu, son 30 günlük sayfa görüntüleme/ziyaretçi sayıları, alınmış sayfa olayları, güvenlik olayları ve ilişkili varlıklar gösterilir. Tracker henüz eklenmediyse analitik bölümünde veri olmadığı açıkça belirtilir; sahte veri üretilmez.
 
 ## 4. Tarayıcı izleme servisi
 `tracker.js` dosyası GitHub'da yayımlanır. Cloud Code doğrulama sonrası jsDelivr CDN adresini içeren snippet üretir. CDN'nin yeni commit'i sunması kısa süre önbelleğe takılabilir. Test için önce bir alan adını doğrulayın, kodu siteye ekleyin, ardından panelde sayfa görüntülemeyi kontrol edin.
@@ -38,14 +35,19 @@ Arama sorguları/performansı için Google Cloud projesi, Search Console API etk
 ## 7. Logo ve arama motoru yapılandırılmış verisi
 Sitedeki favicon, üst menü logosu ve ana görsel `assets/sentrix-logo.svg` dosyasını kullanır. `index.html` içindeki `SoftwareApplication` JSON-LD aynı logo dosyasını, yayınlandığı sitenin gerçek `location.origin` adresiyle mutlak URL'ye dönüştürerek bildirir. Böylece sabit/yanlış bir Vercel alan adı varsayılmaz. Siteyi yayımladıktan sonra kaynak kodunda JSON-LD'nin üretildiğini ve logo URL'sinin herkese açık açıldığını doğrulayın.
 
-## 8. Dağıtım kontrol listesi
+## 8. Hesap silme
+Hesap yönetimi bölümündeki silme düğmesi kullanıcıdan `DELETE MY ACCOUNT` onayı ister. Cloud Function, kullanıcıya ait mülkleri, analitik/güvenlik/audit olaylarını, değerlendirmeleri ve varlık kayıtlarını temizledikten sonra Parse kullanıcısını siler. İşlem geri alınamaz. Back4App deploy edilmeden frontend'deki düğme sunucuda çalışmaz.
+
+## 9. Dağıtım kontrol listesi
 - [ ] Statik siteyi Vercel veya GitHub Pages üzerinde yayımla.
 - [ ] Yayındaki sayfada SENTRIX SVG logosunun ve JSON-LD yapılandırılmış verisinin aynı SVG dosyasını gösterdiğini doğrula.
 - [ ] Back4App Cloud Code deploy sonrası `sentrixBootstrap` işini çalıştır ve raporda tüm kayıtlı şemaların başarıyla kontrol edildiğini doğrula.
 - [ ] Cloud Code'u Back4App'e ayrıca deploy et.
 - [ ] SxDomain.host unique index'i kur.
 - [ ] Yeni kullanıcıyla kayıt ve giriş dene.
-- [ ] Test alan adında doğrulama dosyasını yayımla ve doğrula.
+- [ ] Her test mülkü için indirilen benzersiz doğrulama dosyasını `.well-known/` içine koy, yayımla ve doğrula.
+- [ ] Mülklerim listesinden mülk detay ekranını aç; gerçek tracker ve olay verilerini kontrol et.
+- [ ] Test hesabında hesap silme işlemini doğrula (üretim hesabında deneme yapma).
 - [ ] Tracker snippet'ini ekle ve gerçek sayfa görüntülemesini doğrula.
 - [ ] Search Console OAuth ve WAF webhook bağlantılarını ayrı ayrı kurup test et.
 - [ ] KVKK aydınlatma ve izin mekanizmasını değerlendir.
