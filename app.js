@@ -1,24 +1,27 @@
 (() => {
-  const cfg=window.APP_BACK4APP;
-  const status=document.getElementById('backendStatus');
-  if(!window.Parse || !cfg || cfg.applicationId.startsWith('PASTE_')) { if(status) status.textContent='Back4App bağlantısı için public App ID ve JavaScript Key ayarlanmalı.'; return; }
-  Parse.initialize(cfg.applicationId,cfg.javascriptKey); Parse.serverURL=cfg.serverURL;
-  const say=t=>{if(status)status.textContent=t;};
-  window.SENTRIX={async signUp(username,email,password){const u=new Parse.User();u.set('username',username);u.set('email',email);u.set('password',password);return u.signUp();},
-    async login(username,password){return Parse.User.logIn(username,password);}, async logout(){return Parse.User.logOut();},
-    async addAsset(url,authorizationConfirmed){return Parse.Cloud.run('sentrixAddAsset',{url,authorizationConfirmed});},
-    async listAssets(){return Parse.Cloud.run('sentrixListAssets');},
-    async requestAssessment(assetId,scopeNote,authorizationConfirmed){return Parse.Cloud.run('sentrixCreateAssessmentRequest',{assetId,scopeNote,authorizationConfirmed});}};
-  Parse.Cloud.run('sentrixHealth').then(()=>say('Back4App bağlı · oturum '+(Parse.User.current()?'açık':'kapalı'))).catch(e=>say('Back4App bağlantı hatası: '+e.message));
-  const form=document.getElementById('assetForm');
-  if(form)form.addEventListener('submit',async e=>{e.preventDefault();const input=document.getElementById('asset');const box=document.getElementById('result');try{if(!Parse.User.current())throw Error('Önce giriş yapmalısın.');const r=await SENTRIX.addAsset(input.value,true);box.style.display='block';box.textContent='Varlık Back4App hesabına kaydedildi: '+r.host;input.value='';}catch(err){box.style.display='block';box.textContent='İşlem tamamlanamadı: '+err.message;}});
-
-
-  const authForm=document.getElementById('authForm');
-  if(authForm) authForm.addEventListener('submit',async e=>{e.preventDefault();try{await window.SENTRIX.login(document.getElementById('authUsername').value,document.getElementById('authPassword').value);say('Giriş başarılı. Back4App oturumu açıldı.');}catch(err){say('Giriş başarısız: '+err.message);}});
-  const signUp=document.getElementById('signUpBtn');
-  if(signUp)signUp.addEventListener('click',async()=>{try{await window.SENTRIX.signUp(document.getElementById('authUsername').value,document.getElementById('authEmail').value,document.getElementById('authPassword').value);say('Hesap oluşturuldu. E-posta doğrulama ayarlarını Back4App panelinden etkinleştir.');}catch(err){say('Kayıt başarısız: '+err.message);}});
-  const signOut=document.getElementById('signOutBtn');
-  if(signOut)signOut.addEventListener('click',async()=>{try{await window.SENTRIX.logout();say('Oturum kapatıldı.');}catch(err){say(err.message);}});
-
+'use strict';
+const cfg=window.APP_BACK4APP, $=id=>document.getElementById(id);
+const status=(id,msg)=>{const el=$(id);if(el)el.textContent=msg;};
+let mode='login',domains=[];
+const modal=$('authModal');
+function openAuth(next){mode=next;renderAuth();modal.classList.remove('hidden');$('authEmail').focus();}
+function renderAuth(){const signup=mode==='signup';$('authTitle').textContent=signup?'Hesap oluştur':'Hesabına giriş yap';$('authSubmit').textContent=signup?'Kayıt ol':'Giriş yap';$('nameLabel').classList.toggle('hidden',!signup);$('authName').required=signup;$('authPassword').autocomplete=signup?'new-password':'current-password';$('authSwitch').textContent=signup?'Zaten hesabın var mı? Giriş yap':'Hesabın yok mu? Kayıt ol';status('authMessage','');}
+function message(err){return err&&err.message?err.message.replace(/^Error: /,''):'Beklenmeyen bir hata oluştu.';}
+function showDashboard(user){$('publicView').classList.add('hidden');$('dashboard').classList.remove('hidden');$('welcomeText').textContent=(user.get('name')||user.get('username')||user.get('email'))+' · hesabın ve doğrulanmış varlıkların';loadWorkspace();}
+function showPublic(){$('dashboard').classList.add('hidden');$('publicView').classList.remove('hidden');}
+function api(name,params={}){return Parse.Cloud.run(name,params);}
+async function loadWorkspace(){try{domains=await api('sentrixListDomains');renderDomains();const d=await api('sentrixGetOverview');$('statViews').textContent=d.pageViews.toLocaleString('tr-TR');$('statSessions').textContent=d.sessions.toLocaleString('tr-TR');$('statSecurity').textContent=d.securityEvents.toLocaleString('tr-TR');}catch(e){status('domainNotice','Panel verileri alınamadı: '+message(e));}}
+function renderDomains(){const root=$('domainList');root.replaceChildren();if(!domains.length){root.textContent='Henüz alan adı eklemedin.';return;}domains.forEach(d=>{const card=document.createElement('article');card.className='domain-card';const left=document.createElement('div'),title=document.createElement('strong'),meta=document.createElement('p'),badge=document.createElement('span'),actions=document.createElement('div');title.textContent=d.host;meta.textContent=d.url;badge.className='state '+(d.verified?'good':'pending');badge.textContent=d.verified?'Doğrulandı':'Doğrulama bekliyor';left.append(title,meta,badge);actions.className='domain-actions';if(!d.verified){const b=document.createElement('button');b.className='btn primary';b.textContent='Sahipliği doğrula';b.addEventListener('click',()=>verifyDomain(d.id));actions.append(b);}else{const b=document.createElement('button');b.className='btn';b.textContent='İzleme kodunu göster';b.addEventListener('click',()=>showSnippet(d));actions.append(b);}card.append(left,actions);root.append(card);});}
+async function verifyDomain(id){status('domainNotice','Doğrulama dosyası kontrol ediliyor…');try{const r=await api('sentrixVerifyDomain',{domainId:id});if(!r.verified){status('domainNotice','Dosya bulunamadı veya içeriği eşleşmedi. /.well-known/sentrix-verification.txt yolunu kontrol et.');return;}const d=domains.find(x=>x.id===id);if(d)d.verified=true;renderDomains();showSnippet({snippet:r.snippet});status('domainNotice','Alan adı başarıyla doğrulandı.');}catch(e){status('domainNotice','Doğrulama başarısız: '+message(e));}}
+function showSnippet(d){const code=d.snippet||'Kod üretilemedi.';const box=document.createElement('div');box.className='snippet-box';const p=document.createElement('p');p.textContent='Bu kodu sitenin tüm sayfalarında kapanış </body> etiketinden önce ekle:';const pre=document.createElement('pre');pre.textContent=code;const b=document.createElement('button');b.className='btn primary';b.textContent='Kodu kopyala';b.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(code);b.textContent='Kopyalandı';}catch(e){b.textContent='Kopyalama başarısız';}});box.append(p,pre,b);$('domainList').prepend(box);}
+if(!window.Parse||!cfg){status('authMessage','Back4App istemci yapılandırması bulunamadı.');return;}
+Parse.initialize(cfg.applicationId,cfg.javascriptKey);Parse.serverURL=cfg.serverURL;
+document.querySelectorAll('[data-open-auth]').forEach(b=>b.addEventListener('click',()=>openAuth(b.dataset.openAuth)));
+$('closeAuth').addEventListener('click',()=>modal.classList.add('hidden'));
+modal.addEventListener('click',e=>{if(e.target===modal)modal.classList.add('hidden');});
+$('authSwitch').addEventListener('click',()=>{mode=mode==='login'?'signup':'login';renderAuth();});
+$('authForm').addEventListener('submit',async e=>{e.preventDefault();const b=$('authSubmit');b.disabled=true;b.textContent='İşleniyor…';try{let user;if(mode==='signup'){user=new Parse.User();user.set('username',$('authEmail').value.trim().toLowerCase());user.set('email',$('authEmail').value.trim().toLowerCase());user.set('password',$('authPassword').value);user.set('name',$('authName').value.trim());await user.signUp();}else{user=await Parse.User.logIn($('authEmail').value.trim().toLowerCase(),$('authPassword').value);}modal.classList.add('hidden');showDashboard(user);}catch(err){status('authMessage',message(err));}finally{b.disabled=false;b.textContent=mode==='signup'?'Kayıt ol':'Giriş yap';}});
+$('logoutBtn').addEventListener('click',async()=>{await Parse.User.logOut();showPublic();});
+$('domainForm').addEventListener('submit',async e=>{e.preventDefault();const b=e.submitter;b.disabled=true;try{const d=await api('sentrixCreateDomain',{url:$('domainUrl').value.trim()});$('domainUrl').value='';status('domainNotice','Alan adı eklendi. Şu içeriği dosyaya koy: '+d.verificationContent+' — yol: /.well-known/sentrix-verification.txt');await loadWorkspace();}catch(err){status('domainNotice','Alan adı eklenemedi: '+message(err));}finally{b.disabled=false;}});
+const current=Parse.User.current();if(current)showDashboard(current);
 })();
