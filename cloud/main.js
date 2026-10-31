@@ -24,7 +24,7 @@ const SENTRIX_FEATURE_REGISTRY = {
       SxDomain: {
         fields: {
           owner:{type:'Pointer',targetClass:'_User'}, url:{type:'String'}, host:{type:'String'},
-          token:{type:'String'}, verified:{type:'Boolean'}, siteId:{type:'String'}, verifiedAt:{type:'Date'}
+          token:{type:'String'}, verificationFile:{type:'String'}, verificationPath:{type:'String'}, verified:{type:'Boolean'}, siteId:{type:'String'}, verifiedAt:{type:'Date'}
         },
         indexes: { host:{host:1}, siteId:{siteId:1}, ownerCreated:{'_p_owner':1,createdAt:-1} },
         access:'cloud-only'
@@ -197,10 +197,44 @@ function obj(c,p){const x=new (Parse.Object.extend(c))();Object.keys(p).forEach(
 async function domainFor(u,id){const q=new Parse.Query('SxDomain');q.equalTo('objectId',clean(id,64,'DOMAIN_ID'));q.equalTo('owner',u);const d=await q.first({useMasterKey:true});if(!d)throw new Error('DOMAIN_NOT_FOUND');return d;}
 async function audit(u,d,type){await obj('SxAuditEvent',{actor:u,domain:d,eventType:type}).save(null,{useMasterKey:true});}
 function snippet(d){return '<script async src="https://cdn.jsdelivr.net/gh/turkmenmuhammedeymen-dev/SENTRIX@main/tracker.js" data-site-id="'+d.get('siteId')+'"></script>';}
+function verificationPayload(d){
+  const file=d.get('verificationFile')||('sentrix-verify-'+d.get('siteId')+'.txt');
+  const content='sentrix-verification='+d.get('token')+'\\n';
+  return {fileName:file,filePath:'.well-known/'+file,content,publicUrl:'https://'+d.get('host')+'/.well-known/'+file};
+}
 Parse.Cloud.define('sentrixHealth',async()=>({app:'SENTRIX',status:'ok',serverTime:new Date().toISOString()}));
-Parse.Cloud.define('sentrixCreateDomain',async r=>{await sentrixBootstrapOnLoad;const u=user(r),p=urlInfo(r.params.url),q=new Parse.Query('SxDomain');q.equalTo('host',p.host);const old=await q.first({useMasterKey:true});if(old){if(old.get('owner').id!==u.id)throw new Error('DOMAIN_ALREADY_CLAIMED');return {domainId:old.id,host:p.host,verificationContent:'sentrix-verification='+old.get('token'),verified:old.get('verified')===true};}const token=crypto.randomBytes(24).toString('hex');const d=obj('SxDomain',{owner:u,url:p.url,host:p.host,token,verified:false,siteId:crypto.randomBytes(16).toString('hex')});await d.save(null,{useMasterKey:true});await audit(u,d,'domain.created');return {domainId:d.id,host:p.host,verificationContent:'sentrix-verification='+token,verified:false};});
+Parse.Cloud.define('sentrixCreateDomain',async r=>{await sentrixBootstrapOnLoad;const u=user(r),p=urlInfo(r.params.url),q=new Parse.Query('SxDomain');q.equalTo('host',p.host);const old=await q.first({useMasterKey:true});if(old){if(old.get('owner').id!==u.id)throw new Error('DOMAIN_ALREADY_CLAIMED');return {domainId:old.id,host:p.host,verified:old.get('verified')===true,verification:verificationPayload(old)};}const token=crypto.randomBytes(32).toString('hex'),siteId=crypto.randomBytes(16).toString('hex'),verificationFile='sentrix-verify-'+siteId+'.txt';const d=obj('SxDomain',{owner:u,url:p.url,host:p.host,token,verificationFile,verificationPath:'/.well-known/'+verificationFile,verified:false,siteId});await d.save(null,{useMasterKey:true});await audit(u,d,'domain.created');return {domainId:d.id,host:p.host,verified:false,verification:verificationPayload(d)};});
 Parse.Cloud.define('sentrixListDomains',async r=>{await sentrixBootstrapOnLoad;const u=user(r),q=new Parse.Query('SxDomain');q.equalTo('owner',u);q.descending('createdAt');q.limit(100);return (await q.find({useMasterKey:true})).map(d=>({id:d.id,url:d.get('url'),host:d.get('host'),verified:d.get('verified')===true}));});
-Parse.Cloud.define('sentrixVerifyDomain',async r=>{await sentrixBootstrapOnLoad;const u=user(r),d=await domainFor(u,r.params.domainId);if(d.get('verified'))return {verified:true,snippet:snippet(d)};let res;try{res=await fetch('https://'+d.get('host')+'/.well-known/sentrix-verification.txt',{redirect:'manual'});}catch(e){throw new Error('VERIFICATION_FETCH_FAILED');}if(!res.ok||(await res.text()).trim()!=='sentrix-verification='+d.get('token'))return {verified:false};d.set('verified',true);d.set('verifiedAt',new Date());await d.save(null,{useMasterKey:true});await audit(u,d,'domain.verified');return {verified:true,snippet:snippet(d)};});
+Parse.Cloud.define('sentrixVerifyDomain',async r=>{await sentrixBootstrapOnLoad;const u=user(r),d=await domainFor(u,r.params.domainId),vf=verificationPayload(d);if(d.get('verified'))return {verified:true,snippet:snippet(d),verification:vf};let res;try{res=await fetch('https://'+d.get('host')+vf.publicUrl.replace('https://'+d.get('host'),''),{redirect:'manual'});}catch(e){throw new Error('VERIFICATION_FETCH_FAILED');}if(!res.ok||(await res.text()).trim()!=='sentrix-verification='+d.get('token'))return {verified:false,reason:'FILE_NOT_FOUND_OR_CONTENT_MISMATCH',verification:vf};d.set('verified',true);d.set('verifiedAt',new Date());await d.save(null,{useMasterKey:true});await audit(u,d,'domain.verified');return {verified:true,snippet:snippet(d),verification:vf};});
+
+Parse.Cloud.define('sentrixGetDomainDetails',async r=>{
+  await sentrixBootstrapOnLoad;
+  const u=user(r),d=await domainFor(u,r.params.domainId);
+  const since=new Date(Date.now()-30*86400000);
+  const pq=new Parse.Query('SxPageEvent');pq.equalTo('domain',d);pq.greaterThanOrEqualTo('occurredAt',since);pq.descending('occurredAt');pq.limit(100);
+  const sq=new Parse.Query('SxSecurityEvent');sq.equalTo('domain',d);sq.descending('occurredAt');sq.limit(100);
+  const aq=new Parse.Query('SxAsset');aq.equalTo('owner',u);aq.equalTo('host',d.get('host'));aq.limit(100);
+  const [pages,security,assets]=await Promise.all([pq.find({useMasterKey:true}),sq.find({useMasterKey:true}),aq.find({useMasterKey:true})]);
+  return {domain:{id:d.id,url:d.get('url'),host:d.get('host'),verified:d.get('verified')===true,verifiedAt:d.get('verifiedAt')||null,createdAt:d.createdAt},analytics:{pageViews:pages.length,uniqueVisitors:new Set(pages.map(x=>x.get('visitorHash'))).size,recentPages:pages.map(x=>({path:x.get('path'),referrer:x.get('referrer'),occurredAt:x.get('occurredAt')}))},securityEvents:security.map(x=>({source:x.get('source'),eventType:x.get('eventType'),summary:x.get('summary'),occurredAt:x.get('occurredAt')})),assets:assets.map(x=>({id:x.id,url:x.get('url'),status:x.get('status')}))};
+});
+Parse.Cloud.define('sentrixDeleteAccount',async r=>{
+  const u=user(r);
+  if(r.params.confirmation!=='DELETE MY ACCOUNT') throw new Error('DELETE_CONFIRMATION_REQUIRED');
+  await sentrixBootstrapOnLoad;
+  const ownedDomains=new Parse.Query('SxDomain');ownedDomains.equalTo('owner',u);
+  const domains=await ownedDomains.find({useMasterKey:true});
+  const ownedAssets=new Parse.Query('SxAsset');ownedAssets.equalTo('owner',u);
+  const assets=await ownedAssets.find({useMasterKey:true});
+  const domainIds=domains.map(d=>d.id);
+  if(domainIds.length){
+    const classes=['SxPageEvent','SxSecurityEvent','SxAuditEvent'];
+    for(const c of classes){const q=new Parse.Query(c);q.containedIn('domain',domains);const rows=await q.find({useMasterKey:true});for(let i=0;i<rows.length;i+=100)await Parse.Object.destroyAll(rows.slice(i,i+100),{useMasterKey:true});}
+  }
+  for(const c of ['SxAssessment']){const q=new Parse.Query(c);q.equalTo('owner',u);const rows=await q.find({useMasterKey:true});for(let i=0;i<rows.length;i+=100)await Parse.Object.destroyAll(rows.slice(i,i+100),{useMasterKey:true});}
+  for(const rows of [assets,domains])for(let i=0;i<rows.length;i+=100)await Parse.Object.destroyAll(rows.slice(i,i+100),{useMasterKey:true});
+  await u.destroy({useMasterKey:true});
+  return {deleted:true};
+});
 Parse.Cloud.define('sentrixTrackPageView',async r=>{await sentrixBootstrapOnLoad;const site=clean(r.params.siteId,64,'SITE_ID'),host=clean(r.params.host,253,'HOST').toLowerCase(),q=new Parse.Query('SxDomain');q.equalTo('siteId',site);q.equalTo('host',host);q.equalTo('verified',true);const d=await q.first({useMasterKey:true});if(!d)throw new Error('DOMAIN_NOT_VERIFIED');const visitor=crypto.createHash('sha256').update(site+'|'+clean(r.params.visitorId,100,'VISITOR_ID')).digest('hex');await obj('SxPageEvent',{domain:d,siteId:site,host,path:String(r.params.path||'/').slice(0,500),referrer:String(r.params.referrer||'').slice(0,500),visitorHash:visitor,occurredAt:new Date()}).save(null,{useMasterKey:true});return {accepted:true};});
 Parse.Cloud.define('sentrixGetOverview',async r=>{await sentrixBootstrapOnLoad;const u=user(r),dq=new Parse.Query('SxDomain');dq.equalTo('owner',u);dq.equalTo('verified',true);const ds=await dq.find({useMasterKey:true});if(!ds.length)return {pageViews:0,sessions:0,securityEvents:0,daily:[]};const q=new Parse.Query('SxPageEvent');q.containedIn('domain',ds);q.greaterThanOrEqualTo('occurredAt',new Date(Date.now()-30*86400000));q.limit(1000);const ev=await q.find({useMasterKey:true}),vis=new Set(ev.map(x=>x.get('visitorHash'))),days={};ev.forEach(x=>{const k=x.get('occurredAt').toISOString().slice(0,10);days[k]=(days[k]||0)+1;});const sq=new Parse.Query('SxSecurityEvent');sq.containedIn('domain',ds);const securityEvents=await sq.count({useMasterKey:true}).catch(()=>0);return {pageViews:ev.length,sessions:vis.size,securityEvents,daily:Object.keys(days).sort().slice(-7).map(day=>({day,views:days[day]}))};});
 Parse.Cloud.define('sentrixIngestSecurityEvent',async r=>{await sentrixBootstrapOnLoad;const config=await Parse.Config.get();const secret=config.get('SENTRIX_WAF_INGEST_TOKEN');if(!secret||r.params.token!==secret)throw new Error('INGEST_UNAUTHORIZED');const q=new Parse.Query('SxDomain');q.equalTo('siteId',clean(r.params.siteId,64,'SITE_ID'));q.equalTo('verified',true);const d=await q.first({useMasterKey:true});if(!d)throw new Error('DOMAIN_NOT_VERIFIED');await obj('SxSecurityEvent',{domain:d,siteId:d.get('siteId'),source:clean(r.params.source||'external',50,'SOURCE'),eventType:clean(r.params.eventType,80,'EVENT_TYPE'),summary:String(r.params.summary||'').slice(0,500),occurredAt:new Date()}).save(null,{useMasterKey:true});return {accepted:true};});
