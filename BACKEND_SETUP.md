@@ -13,7 +13,7 @@ In Back4App, open Cloud Code and deploy the repository's `cloud/main.js` as the 
 Enable email verification if desired, set password policy, review class-level permissions, and disable direct client writes to `SxAssessment` and `SxAuditEvent`. The Cloud Code functions use master-key writes only after validating the logged-in user. Do not expose the Master Key.
 
 ## 5. Deploy the website
-Deploy the repository root to your static host. Confirm the deployed site serves `/js/back4app-config.js` and `/js/app.js`. Test registration, login, asset registration, asset listing, and logout with a test account.
+Deploy the repository root to your static host. Confirm the deployed site serves `/public/js/back4app-config.js` and `/public/js/app.js`. Test registration, login, asset registration, asset listing, and logout with a test account.
 
 ## Current feature boundary
 Asset records and assessment requests are persisted in Back4App. The assessment request endpoint deliberately returns `scannerEnabled: false`; no automated scanner is included. Only register assets you own or have explicit permission to assess.
