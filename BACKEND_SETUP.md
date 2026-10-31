@@ -1,19 +1,21 @@
-# SENTRIX — Back4App setup
+# SENTRIX — kurulum
 
-## 1. Create a dedicated Back4App app
-Create a new Parse app named SENTRIX. Do not reuse the NEXORA or AETHRION app.
+## Back4App istemci ayarları
+Kök `back4app-config.js` ve `public/js/back4app-config.js` dosyaları SENTRIX için verilen Application ID ve JavaScript Key ile yapılandırılmıştır. Bunlar tarayıcıda kullanılabilen istemci anahtarlarıdır. **Master Key'i hiçbir zaman GitHub'a veya tarayıcıya koymayın.**
 
-## 2. Configure the browser
-Open `public/js/back4app-config.js` and replace the two placeholders with this SENTRIX app's **Application ID** and **JavaScript Key**. These are client keys; never use the Master Key here. The Parse Server URL is already configured.
+## Cloud Code
+`cloud/main.js` dosyasını Back4App Cloud Code ana dosyası olarak deploy edin. GitHub'a commit etmek Back4App sunucusuna otomatik deploy yapmaz. Deploy sonrasında Cloud Code loglarını kontrol edin.
 
-## 3. Deploy Cloud Code
-In Back4App, open Cloud Code and deploy the repository's `cloud/main.js` as the app's main.js. The functions `sentrixHealth`, `sentrixAddAsset`, `sentrixListAssets`, `sentrixDeleteAsset`, and `sentrixCreateAssessmentRequest` should appear after deployment.
+## Alan adı doğrulama
+Kullanıcıya verilen dosyayı şu yola yükleyin:
+`https://alanadiniz/.well-known/sentrix-verification.txt`
+Dosyanın içeriği panelde gösterilen `sentrix-verification=TOKEN` satırıyla birebir aynı olmalıdır. Domain sahipliği uygulama sorgusuyla kontrol edilir. Eşzamanlı claim yarışlarını kesin olarak engellemek için Back4App veritabanında SxDomain.host alanına unique index ekleyin; Parse sorgu-önce-kaydet akışı tek başına yarış koşuluna karşı kesin tekillik garantisi vermez.
 
-## 4. Configure Parse security
-Enable email verification if desired, set password policy, review class-level permissions, and disable direct client writes to `SxAssessment` and `SxAuditEvent`. The Cloud Code functions use master-key writes only after validating the logged-in user. Do not expose the Master Key.
+## Gerçek veri entegrasyonları
+Cloud Code olay kayıt uçları sağlar. Ancak tarayıcı snippet'inin gerçek veri göndermesi için ayrıca yayımlanmış tracker.js servisi gerekir; henüz bu depoda tracker servisi yoktur. Google Search Console verisi OAuth ve Search Console API, WAF olayları ise güvenli sunucu tarafı webhook'u ve SENTRIX_WAF_INGEST_TOKEN yapılandırması gerektirir. Bu bağlantılar olmadan arayüz gerçek dışı veri göstermemelidir.
 
-## 5. Deploy the website
-Deploy the repository root to your static host. Confirm the deployed site serves `/js/back4app-config.js` and `/js/app.js`. Test registration, login, asset registration, asset listing, and logout with a test account.
-
-## Current feature boundary
-Asset records and assessment requests are persisted in Back4App. The assessment request endpoint deliberately returns `scannerEnabled: false`; no automated scanner is included. Only register assets you own or have explicit permission to assess.
+## Yayın ve test
+1. Statik siteyi GitHub Pages/Vercel üzerinde yayımla.
+2. Cloud Code'u Back4App'e ayrıca deploy et.
+3. Yeni test hesabıyla kayıt/giriş, domain doğrulama ve event ingest akışlarını test et.
+4. Master Key, WAF tokenı veya başka sunucu sırlarını istemci dosyalarına ekleme.
