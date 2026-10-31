@@ -1,15 +1,15 @@
 # SENTRIX — Security Intelligence Workspace
 
-SENTRIX is an independent, defensive security-awareness workspace for assets a user owns or is explicitly authorized to assess.
+SENTRIX is an independent defensive security-awareness workspace for assets a user owns or is explicitly authorized to assess.
 
-## Starter interface
-- Responsive landing page and animated intro.
-- Local-only asset URL form; no real scan is performed.
+## Back4App backend
+- Parse Server authentication (username/email/password).
+- Cloud Code endpoints for registering/listing/deleting owned assets and creating assessment requests.
+- Server-side ownership checks and audit events.
+- Cloud Code source: `cloud/main.js`; browser integration: `public/js/`.
 
-## Backend foundation
-- Supabase migration for profiles, owned assets, assessment records, findings, and audit events.
-- Row Level Security policies; privileged assessment writes are server-only.
-- Setup guide: [BACKEND_SETUP.md](BACKEND_SETUP.md).
+## Important limits
+The current backend does **not** run a scanner. Assessment requests are stored as requests only; no scan, vulnerability result, or score is fabricated. Before adding any assessment engine, implement verified ownership/authorization, strict scope controls, rate limits, abuse monitoring, and audit review.
 
-## Safety
-No unauthorized access, exploitation, credential collection, stealth, or third-party targeting. No fabricated scan results or scores. A real scanner requires explicit authorization, scope verification, server-side execution, rate limits, and audit logs.
+## Setup
+Follow [BACKEND_SETUP.md](BACKEND_SETUP.md). Each project must use its own Back4App app and its own credentials. Never put the Master Key in browser code or Git.
