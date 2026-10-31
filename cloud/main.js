@@ -25,7 +25,9 @@ async function ownedAsset(user, id) {
 }
 Parse.Cloud.define('sentrixHealth', async () => ({ app: APP, status: 'ok', version: '1.0.0', serverTime: now().toISOString() }));
 Parse.Cloud.define('sentrixAddAsset', async request => {
-  const user = requireUser(request); const parsed = safeUrl(request.params.url);
+  const user = requireUser(request);
+  if (request.params.authorizationConfirmed !== true) throw new Error('AUTHORIZATION_REQUIRED');
+  const parsed = safeUrl(request.params.url);
   const q = new Parse.Query('SxAsset'); q.equalTo('owner', user); q.equalTo('host', parsed.host);
   const existing = await q.first({ useMasterKey: true });
   if (existing) return { id: existing.id, url: existing.get('url'), host: existing.get('host'), existing: true };
