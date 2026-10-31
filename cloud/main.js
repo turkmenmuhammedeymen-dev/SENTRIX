@@ -7,69 +7,190 @@ const user = r => { if (!r.user) throw new Error('AUTH_REQUIRED'); return r.user
 const clean = (v,n,k) => { if(typeof v!=='string'||!v.trim()||v.trim().length>n) throw new Error(k+'_INVALID'); return v.trim(); };
 function urlInfo(v){let u;try{u=new URL(clean(v,2048,'URL'));}catch(e){throw new Error('URL_INVALID');}if(!['http:','https:'].includes(u.protocol)||u.username||u.password)throw new Error('URL_INVALID');u.hash='';return {url:u.toString().replace(/\/$/,''),host:u.hostname.toLowerCase()};}
 
-// Idempotent Parse schema bootstrap. Custom classes are private to Cloud Code;
-// client CRUD and schema mutation are denied by CLP. Cloud Functions use Master Key.
-const SENTRIX_SCHEMAS = {
-  SxDomain: { owner:['pointer','_User'], url:['string'], host:['string'], token:['string'], verified:['boolean'], siteId:['string'], verifiedAt:['date'] },
-  SxAuditEvent: { actor:['pointer','_User'], domain:['pointer','SxDomain'], eventType:['string'] },
-  SxPageEvent: { domain:['pointer','SxDomain'], siteId:['string'], host:['string'], path:['string'], referrer:['string'], visitorHash:['string'], occurredAt:['date'] },
-  SxSecurityEvent: { domain:['pointer','SxDomain'], siteId:['string'], source:['string'], eventType:['string'], summary:['string'], occurredAt:['date'] },
-  SxAsset: { owner:['pointer','_User'], url:['string'], host:['string'], status:['string'] },
-  SxAssessment: { owner:['pointer','_User'], asset:['pointer','SxAsset'], status:['string'], scopeNote:['string'], scannerEnabled:['boolean'] }
-};
-async function ensureSentrixSchemas(){
-  const report=[];
-  for (const [className, fields] of Object.entries(SENTRIX_SCHEMAS)) {
-    const schema=new Parse.Schema(className);
-    let exists=true, current;
-    try { current=await schema.get({useMasterKey:true}); }
-    catch(e) {
-      const msg=String(e && (e.message||e.code)||e);
-      if (!/does not exist|not found|class.*exist|101/i.test(msg)) throw e;
-      exists=false; current={fields:{},indexes:{}};
+// SENTRIX FEATURE REGISTRY — the single source of truth for persisted data.
+// Every new feature must register its schema requirements here before release.
+// Parse built-ins are described but never recreated. _User is extended in-place;
+// _Session remains fully managed by Parse authentication.
+const SENTRIX_FEATURE_REGISTRY = {
+  account: {
+    builtIns: {
+      _User: { fields: { name: { type: 'String' } }, note: 'Built-in Parse user; preserve username/email/password/authData/session behavior.' },
+      _Session: { fields: {}, note: 'Built-in Parse session; managed only by Parse authentication.' }
+    },
+    classes: {}
+  },
+  assetManagement: {
+    classes: {
+      SxDomain: {
+        fields: {
+          owner:{type:'Pointer',targetClass:'_User'}, url:{type:'String'}, host:{type:'String'},
+          token:{type:'String'}, verified:{type:'Boolean'}, siteId:{type:'String'}, verifiedAt:{type:'Date'}
+        },
+        indexes: { host:{host:1}, siteId:{siteId:1}, ownerCreated:{'_p_owner':1,createdAt:-1} },
+        access:'cloud-only'
+      },
+      SxAsset: {
+        fields: { owner:{type:'Pointer',targetClass:'_User'}, url:{type:'String'}, host:{type:'String'}, status:{type:'String'} },
+        indexes: { ownerHost:{'_p_owner':1,host:1}, host:{host:1} },
+        access:'cloud-only'
+      }
     }
-    const present=current.fields||{};
-    let changed=false;
-    for (const [field,spec] of Object.entries(fields)) {
-      if (present[field]) continue;
-      const [type,target]=spec;
-      if(type==='pointer') schema.addPointer(field,target);
-      else if(type==='string') schema.addString(field);
-      else if(type==='boolean') schema.addBoolean(field);
-      else if(type==='date') schema.addDate(field);
-      changed=true;
+  },
+  analytics: {
+    classes: {
+      SxPageEvent: {
+        fields: {
+          domain:{type:'Pointer',targetClass:'SxDomain'}, siteId:{type:'String'}, host:{type:'String'},
+          path:{type:'String'}, referrer:{type:'String'}, visitorHash:{type:'String'}, occurredAt:{type:'Date'}
+        },
+        indexes: { domainDate:{'_p_domain':1,occurredAt:-1}, siteVisitor:{siteId:1,visitorHash:1}, siteDate:{siteId:1,occurredAt:-1} },
+        access:'cloud-only'
+      }
     }
-    // Add ordinary query indexes only. A MongoDB UNIQUE constraint is a separate
-    // database-level operation and is deliberately not misrepresented as unique here.
-    const indexes=current.indexes||{};
-    const wanted={
-      SxDomain:{host:{host:1},siteId:{siteId:1},ownerCreated:{owner:1,createdAt:-1}},
-      SxPageEvent:{domainDate:{domain:1,occurredAt:-1},siteVisitor:{siteId:1,visitorHash:1}},
-      SxSecurityEvent:{domainDate:{domain:1,occurredAt:-1}},
-      SxAsset:{ownerHost:{owner:1,host:1}},
-      SxAuditEvent:{domainDate:{domain:1,createdAt:-1}},
-      SxAssessment:{ownerDate:{owner:1,createdAt:-1}}
-    }[className]||{};
-    for (const [name,keySpec] of Object.entries(wanted)) {
-      if (!indexes[name]) { schema.addIndex(name,keySpec); changed=true; }
+  },
+  securityTelemetry: {
+    classes: {
+      SxSecurityEvent: {
+        fields: {
+          domain:{type:'Pointer',targetClass:'SxDomain'}, siteId:{type:'String'}, source:{type:'String'},
+          eventType:{type:'String'}, summary:{type:'String'}, occurredAt:{type:'Date'}
+        },
+        indexes: { domainDate:{'_p_domain':1,occurredAt:-1}, siteDate:{siteId:1,occurredAt:-1} },
+        access:'cloud-only'
+      },
+      SxAuditEvent: {
+        fields: { actor:{type:'Pointer',targetClass:'_User'}, domain:{type:'Pointer',targetClass:'SxDomain'}, eventType:{type:'String'} },
+        indexes: { domainDate:{'_p_domain':1,createdAt:-1}, actorDate:{'_p_actor':1,createdAt:-1} },
+        access:'cloud-only'
+      }
     }
-    // Empty CLP means no public, authenticated-user, or role-level client access.
-    schema.setCLP(new Parse.CLP());
-    if (!exists) await schema.save({useMasterKey:true});
-    else if (changed || current.classLevelPermissions) await schema.update({useMasterKey:true});
-    report.push({className,created:!exists,fields:Object.keys(fields).length});
+  },
+  assessments: {
+    classes: {
+      SxAssessment: {
+        fields: {
+          owner:{type:'Pointer',targetClass:'_User'}, asset:{type:'Pointer',targetClass:'SxAsset'},
+          status:{type:'String'}, scopeNote:{type:'String'}, scannerEnabled:{type:'Boolean'}
+        },
+        indexes: { ownerDate:{'_p_owner':1,createdAt:-1}, assetDate:{'_p_asset':1,createdAt:-1} },
+        access:'cloud-only'
+      }
+    }
   }
-  return {ok:true,schemas:report};
+};
+
+function flattenFeatureRegistry(registry) {
+  const classes = {};
+  Object.keys(registry).forEach(feature => {
+    const entry = registry[feature];
+    Object.keys(entry.classes || {}).forEach(name => {
+      if (classes[name]) throw new Error('DUPLICATE_SCHEMA_REGISTRATION:'+name);
+      classes[name] = Object.assign({feature}, entry.classes[name]);
+    });
+  });
+  return classes;
 }
+const SENTRIX_SCHEMAS = flattenFeatureRegistry(SENTRIX_FEATURE_REGISTRY);
+const SENTRIX_PRIVATE_CLP = new Parse.CLP();
+
+function addRegisteredField(schema, name, spec) {
+  switch (spec.type) {
+    case 'String': schema.addString(name); break;
+    case 'Number': schema.addNumber(name); break;
+    case 'Boolean': schema.addBoolean(name); break;
+    case 'Date': schema.addDate(name); break;
+    case 'Object': schema.addObject(name); break;
+    case 'Array': schema.addArray(name); break;
+    case 'File': schema.addFile(name); break;
+    case 'GeoPoint': schema.addGeoPoint(name); break;
+    case 'Pointer': schema.addPointer(name, spec.targetClass); break;
+    case 'Relation': schema.addRelation(name, spec.targetClass); break;
+    default: throw new Error('UNSUPPORTED_SCHEMA_FIELD_TYPE:'+name+':'+spec.type);
+  }
+}
+
+// Safe, additive reconciliation: never deletes classes, fields, indexes or data.
+// Existing field types are checked and mismatches fail loudly instead of mutating data.
+async function ensureSentrixSchemas() {
+  const report = [];
+  const builtIns = SENTRIX_FEATURE_REGISTRY.account.builtIns;
+  for (const [className, definition] of Object.entries(builtIns)) {
+    const schema = new Parse.Schema(className);
+    const current = await schema.get();
+    const present = current.fields || {};
+    let changed = false;
+    for (const [field, spec] of Object.entries(definition.fields)) {
+      if (present[field]) {
+        if (present[field].type !== spec.type) throw new Error('SCHEMA_TYPE_CONFLICT:'+className+'.'+field);
+      } else {
+        addRegisteredField(schema, field, spec);
+        changed = true;
+      }
+    }
+    // Never alter _User CLPs or _Session: signup/login/session lifecycle are Parse-managed.
+    if (changed) {
+      await schema.update();
+      report.push({className, feature:'account', addedFields:Object.keys(definition.fields).filter(k=>!present[k])});
+    }
+  }
+
+  for (const [className, definition] of Object.entries(SENTRIX_SCHEMAS)) {
+    const schema = new Parse.Schema(className);
+    let current, exists = true;
+    try {
+      current = await schema.get();
+    } catch (error) {
+      const code = Number(error && error.code);
+      const message = String(error && error.message || error);
+      if (code !== 101 && !/class.*not.*exist|schema.*not.*found|does not exist/i.test(message)) throw error;
+      exists = false;
+      current = {fields:{}, indexes:{}};
+    }
+    const present = current.fields || {};
+    const indexes = current.indexes || {};
+    let changed = false;
+    const addedFields = [];
+    for (const [field, spec] of Object.entries(definition.fields)) {
+      if (present[field]) {
+        if (present[field].type !== spec.type ||
+            (spec.type === 'Pointer' && present[field].targetClass !== spec.targetClass)) {
+          throw new Error('SCHEMA_TYPE_CONFLICT:'+className+'.'+field);
+        }
+      } else {
+        addRegisteredField(schema, field, spec);
+        changed = true;
+        addedFields.push(field);
+      }
+    }
+    // Indexes are added only after their referenced fields exist. Pointer indexes
+    // use Parse's physical _p_field representation. No index is falsely called unique.
+    for (const [name, keys] of Object.entries(definition.indexes || {})) {
+      if (!indexes[name]) {
+        schema.addIndex(name, keys);
+        changed = true;
+      }
+    }
+    // These records contain private account, telemetry or assessment data.
+    // Clients cannot CRUD or alter their schemas; Cloud Code uses Master Key.
+    schema.setCLP(SENTRIX_PRIVATE_CLP);
+    if (!exists) {
+      await schema.save();
+    } else if (changed || !current.classLevelPermissions) {
+      await schema.update();
+    }
+    report.push({className, feature:definition.feature, created:!exists, addedFields, indexCount:Object.keys(definition.indexes||{}).length, access:definition.access});
+  }
+  return {ok:true, registryVersion:1, features:Object.keys(SENTRIX_FEATURE_REGISTRY), schemas:report};
+}
+
 Parse.Cloud.job('sentrixBootstrap', async request => {
-  const result=await ensureSentrixSchemas();
-  if(request && request.message) request.message('SENTRIX schema bootstrap completed: '+result.schemas.length+' classes');
+  const result = await ensureSentrixSchemas();
+  if (request && request.message) request.message('SENTRIX registry reconciliation completed: '+result.schemas.length+' schema updates checked');
   return result;
 });
-// Run once on Cloud Code startup; the job above is available for safe manual reruns.
-const sentrixBootstrapOnLoad=ensureSentrixSchemas()
-  .then(r=>console.info('[SENTRIX] schema bootstrap ready:',r.schemas.length,'classes'))
-  .catch(e=>console.error('[SENTRIX] schema bootstrap failed; run sentrixBootstrap job:',e && e.message || e));
+const sentrixBootstrapOnLoad = ensureSentrixSchemas()
+  .then(result => { console.info('[SENTRIX] registry reconciled:', result.schemas.length, 'schemas'); return result; })
+  .catch(error => { console.error('[SENTRIX] registry reconciliation failed:', error && error.message || error); throw error; });
 
 function obj(c,p){const x=new (Parse.Object.extend(c))();Object.keys(p).forEach(k=>x.set(k,p[k]));return x;}
 async function domainFor(u,id){const q=new Parse.Query('SxDomain');q.equalTo('objectId',clean(id,64,'DOMAIN_ID'));q.equalTo('owner',u);const d=await q.first({useMasterKey:true});if(!d)throw new Error('DOMAIN_NOT_FOUND');return d;}
