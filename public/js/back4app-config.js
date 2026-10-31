@@ -1,6 +1,6 @@
-/* Back4App browser configuration. Application ID and JavaScript key are client keys, not master keys. */
+/* Public Back4App client configuration. Master Key must never be placed here. */
 window.APP_BACK4APP = Object.freeze({
-  applicationId: 'PASTE_THIS_APP_APPLICATION_ID',
-  javascriptKey: 'PASTE_THIS_APP_JAVASCRIPT_KEY',
+  applicationId: '33iVkF8qI8RLYO55iSJ7EUkkj4VwTVBOWznZU8tn',
+  javascriptKey: '5GITBYvsaM77CaqQWRGpqo8Bwe6OTdKcD0IzohgF',
   serverURL: 'https://parseapi.back4app.com'
 });
