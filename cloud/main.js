@@ -115,6 +115,7 @@ async function ensureSentrixSchemas() {
   const report = [];
   const builtIns = SENTRIX_FEATURE_REGISTRY.account.builtIns;
   for (const [className, definition] of Object.entries(builtIns)) {
+    if (className === '_Session') continue; // Parse owns session schema and lifecycle.
     const schema = new Parse.Schema(className);
     const current = await schema.get();
     const present = current.fields || {};
