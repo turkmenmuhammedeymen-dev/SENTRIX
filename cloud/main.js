@@ -175,7 +175,7 @@ async function ensureSentrixSchemas() {
     schema.setCLP(SENTRIX_PRIVATE_CLP);
     if (!exists) {
       await schema.save();
-    } else if (changed || !current.classLevelPermissions) {
+    } else if (changed || JSON.stringify(current.classLevelPermissions || {}) !== JSON.stringify(SENTRIX_PRIVATE_CLP.toJSON())) {
       await schema.update();
     }
     report.push({className, feature:definition.feature, created:!exists, addedFields, indexCount:Object.keys(definition.indexes||{}).length, access:definition.access});
