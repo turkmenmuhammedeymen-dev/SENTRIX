@@ -1,76 +1,24 @@
 /**
- * SENTRIX — Back4App Cloud Code
- * Deploy as cloud/main.js in the SENTRIX Back4App app.
- * All privileged writes use masterKey only after validating request.user.
+ * SENTRIX Cloud Code — verified-domain event foundation.
+ * Deploy as Back4App Cloud Code main.js. Never expose the Master Key.
  */
-const APP = 'SENTRIX';
-const MAX_URL = 2048;
-const now = () => new Date();
-function requireUser(request) { if (!request.user) throw new Error('AUTH_REQUIRED'); return request.user; }
-function cleanText(value, max, field) {
-  if (typeof value !== 'string') throw new Error(field + '_INVALID');
-  const v = value.trim();
-  if (!v || v.length > max) throw new Error(field + '_INVALID');
-  return v;
-}
-function safeUrl(value) {
-  const raw = cleanText(value, MAX_URL, 'URL');
-  let u; try { u = new URL(raw); } catch (_) { throw new Error('URL_INVALID'); }
-  if (!['http:', 'https:'].includes(u.protocol) || u.username || u.password) throw new Error('URL_INVALID');
-  return { url: u.toString(), host: u.hostname.toLowerCase() };
-}
-async function ownedAsset(user, id) {
-  const q = new Parse.Query('SxAsset'); q.equalTo('objectId', cleanText(id, 64, 'ASSET_ID')); q.equalTo('owner', user);
-  const asset = await q.first({ useMasterKey: true }); if (!asset) throw new Error('ASSET_NOT_FOUND'); return asset;
-}
-Parse.Cloud.define('sentrixHealth', async () => ({ app: APP, status: 'ok', version: '1.0.0', serverTime: now().toISOString() }));
-Parse.Cloud.define('sentrixAddAsset', async request => {
-  const user = requireUser(request);
-  if (request.params.authorizationConfirmed !== true) throw new Error('AUTHORIZATION_REQUIRED');
-  const parsed = safeUrl(request.params.url);
-  const q = new Parse.Query('SxAsset'); q.equalTo('owner', user); q.equalTo('host', parsed.host);
-  const existing = await q.first({ useMasterKey: true });
-  if (existing) return { id: existing.id, url: existing.get('url'), host: existing.get('host'), existing: true };
-  const Asset = Parse.Object.extend('SxAsset'); const asset = new Asset();
-  asset.set('owner', user); asset.set('url', parsed.url); asset.set('host', parsed.host);
-  asset.set('authorizationConfirmed', request.params.authorizationConfirmed === true);
-  asset.set('status', 'registered');
-  await asset.save(null, { useMasterKey: true });
-  await audit(user, asset, 'asset.registered');
-  return { id: asset.id, url: asset.get('url'), host: asset.get('host'), existing: false };
-});
-Parse.Cloud.define('sentrixListAssets', async request => {
-  const user = requireUser(request); const q = new Parse.Query('SxAsset'); q.equalTo('owner', user); q.descending('createdAt'); q.limit(100);
-  const rows = await q.find({ useMasterKey: true });
-  return rows.map(x => ({ id: x.id, url: x.get('url'), host: x.get('host'), status: x.get('status'), createdAt: x.createdAt }));
-});
-Parse.Cloud.define('sentrixDeleteAsset', async request => {
-  const user = requireUser(request); const asset = await ownedAsset(user, request.params.assetId);
-  await audit(user, asset, 'asset.deleted'); await asset.destroy({ useMasterKey: true }); return { deleted: true };
-});
-Parse.Cloud.define('sentrixCreateAssessmentRequest', async request => {
-  const user = requireUser(request); const asset = await ownedAsset(user, request.params.assetId);
-  if (request.params.authorizationConfirmed !== true) throw new Error('AUTHORIZATION_REQUIRED');
-  const note = typeof request.params.scopeNote === 'string' ? request.params.scopeNote.trim().slice(0, 1000) : '';
-  const Assessment = Parse.Object.extend('SxAssessment'); const item = new Assessment();
-  item.set('owner', user); item.set('asset', asset); item.set('status', 'requested'); item.set('scopeNote', note);
-  item.set('authorizationConfirmed', true); item.set('notice', 'No automated scan is executed by this starter backend.');
-  await item.save(null, { useMasterKey: true }); await audit(user, asset, 'assessment.requested');
-  return { id: item.id, status: item.get('status'), scannerEnabled: false };
-});
-async function audit(user, asset, type) {
-  const Audit = Parse.Object.extend('SxAuditEvent'); const event = new Audit();
-  event.set('actor', user); if (asset) event.set('asset', asset); event.set('eventType', type);
-  await event.save(null, { useMasterKey: true });
-}
-// Prevent clients from directly creating or changing privileged records.
-['SxAssessment','SxAuditEvent'].forEach(className => {
-  Parse.Cloud.beforeSave(className, request => {
-    if (!request.master) throw new Error('SERVER_WRITE_ONLY');
-  });
-});
-Parse.Cloud.beforeSave('SxAsset', request => {
-  if (!request.master) throw new Error('USE_SENTRIX_CLOUD_FUNCTIONS');
-  const host = request.object.get('host');
-  if (typeof host !== 'string' || host.length > 253) throw new Error('HOST_INVALID');
-});
+const crypto = require('crypto');
+const user = r => { if (!r.user) throw new Error('AUTH_REQUIRED'); return r.user; };
+const clean = (v,n,k) => { if(typeof v!=='string'||!v.trim()||v.trim().length>n) throw new Error(k+'_INVALID'); return v.trim(); };
+function urlInfo(v){let u;try{u=new URL(clean(v,2048,'URL'));}catch(e){throw new Error('URL_INVALID');}if(!['http:','https:'].includes(u.protocol)||u.username||u.password)throw new Error('URL_INVALID');u.hash='';return {url:u.toString().replace(/\/$/,''),host:u.hostname.toLowerCase()};}
+function obj(c,p){const x=new (Parse.Object.extend(c))();Object.keys(p).forEach(k=>x.set(k,p[k]));return x;}
+async function domainFor(u,id){const q=new Parse.Query('SxDomain');q.equalTo('objectId',clean(id,64,'DOMAIN_ID'));q.equalTo('owner',u);const d=await q.first({useMasterKey:true});if(!d)throw new Error('DOMAIN_NOT_FOUND');return d;}
+async function audit(u,d,type){await obj('SxAuditEvent',{actor:u,domain:d,eventType:type}).save(null,{useMasterKey:true});}
+function snippet(d){return '<script async src="https://YOUR-SENTRIX-TRACKER-HOST/tracker.js" data-site-id="'+d.get('siteId')+'"></script>';}
+Parse.Cloud.define('sentrixHealth',async()=>({app:'SENTRIX',status:'ok',serverTime:new Date().toISOString()}));
+Parse.Cloud.define('sentrixCreateDomain',async r=>{const u=user(r),p=urlInfo(r.params.url),q=new Parse.Query('SxDomain');q.equalTo('host',p.host);const old=await q.first({useMasterKey:true});if(old){if(old.get('owner').id!==u.id)throw new Error('DOMAIN_ALREADY_CLAIMED');return {domainId:old.id,host:p.host,verificationContent:'sentrix-verification='+old.get('token'),verified:old.get('verified')===true};}const token=crypto.randomBytes(24).toString('hex');const d=obj('SxDomain',{owner:u,url:p.url,host:p.host,token,verified:false,siteId:crypto.randomBytes(16).toString('hex')});await d.save(null,{useMasterKey:true});await audit(u,d,'domain.created');return {domainId:d.id,host:p.host,verificationContent:'sentrix-verification='+token,verified:false};});
+Parse.Cloud.define('sentrixListDomains',async r=>{const u=user(r),q=new Parse.Query('SxDomain');q.equalTo('owner',u);q.descending('createdAt');q.limit(100);return (await q.find({useMasterKey:true})).map(d=>({id:d.id,url:d.get('url'),host:d.get('host'),verified:d.get('verified')===true}));});
+Parse.Cloud.define('sentrixVerifyDomain',async r=>{const u=user(r),d=await domainFor(u,r.params.domainId);if(d.get('verified'))return {verified:true,snippet:snippet(d)};let res;try{res=await fetch('https://'+d.get('host')+'/.well-known/sentrix-verification.txt',{redirect:'manual'});}catch(e){throw new Error('VERIFICATION_FETCH_FAILED');}if(!res.ok||(await res.text()).trim()!=='sentrix-verification='+d.get('token'))return {verified:false};d.set('verified',true);d.set('verifiedAt',new Date());await d.save(null,{useMasterKey:true});await audit(u,d,'domain.verified');return {verified:true,snippet:snippet(d)};});
+Parse.Cloud.define('sentrixTrackPageView',async r=>{const site=clean(r.params.siteId,64,'SITE_ID'),host=clean(r.params.host,253,'HOST').toLowerCase(),q=new Parse.Query('SxDomain');q.equalTo('siteId',site);q.equalTo('host',host);q.equalTo('verified',true);const d=await q.first({useMasterKey:true});if(!d)throw new Error('DOMAIN_NOT_VERIFIED');const visitor=crypto.createHash('sha256').update(site+'|'+clean(r.params.visitorId,100,'VISITOR_ID')).digest('hex');await obj('SxPageEvent',{domain:d,siteId:site,host,path:String(r.params.path||'/').slice(0,500),referrer:String(r.params.referrer||'').slice(0,500),visitorHash:visitor,occurredAt:new Date()}).save(null,{useMasterKey:true});return {accepted:true};});
+Parse.Cloud.define('sentrixGetOverview',async r=>{const u=user(r),dq=new Parse.Query('SxDomain');dq.equalTo('owner',u);dq.equalTo('verified',true);const ds=await dq.find({useMasterKey:true});if(!ds.length)return {pageViews:0,sessions:0,securityEvents:0,daily:[]};const q=new Parse.Query('SxPageEvent');q.containedIn('domain',ds);q.greaterThanOrEqualTo('occurredAt',new Date(Date.now()-30*86400000));q.limit(1000);const ev=await q.find({useMasterKey:true}),vis=new Set(ev.map(x=>x.get('visitorHash'))),days={};ev.forEach(x=>{const k=x.get('occurredAt').toISOString().slice(0,10);days[k]=(days[k]||0)+1;});const sq=new Parse.Query('SxSecurityEvent');sq.containedIn('domain',ds);const securityEvents=await sq.count({useMasterKey:true}).catch(()=>0);return {pageViews:ev.length,sessions:vis.size,securityEvents,daily:Object.keys(days).sort().slice(-7).map(day=>({day,views:days[day]}))};});
+Parse.Cloud.define('sentrixIngestSecurityEvent',async r=>{const secret=process.env.SENTRIX_WAF_INGEST_TOKEN;if(!secret||r.params.token!==secret)throw new Error('INGEST_UNAUTHORIZED');const q=new Parse.Query('SxDomain');q.equalTo('siteId',clean(r.params.siteId,64,'SITE_ID'));q.equalTo('verified',true);const d=await q.first({useMasterKey:true});if(!d)throw new Error('DOMAIN_NOT_VERIFIED');await obj('SxSecurityEvent',{domain:d,siteId:d.get('siteId'),source:clean(r.params.source||'external',50,'SOURCE'),eventType:clean(r.params.eventType,80,'EVENT_TYPE'),summary:String(r.params.summary||'').slice(0,500),occurredAt:new Date()}).save(null,{useMasterKey:true});return {accepted:true};});
+Parse.Cloud.define('sentrixAddAsset',async r=>{const u=user(r);if(r.params.authorizationConfirmed!==true)throw new Error('AUTHORIZATION_REQUIRED');const p=urlInfo(r.params.url),q=new Parse.Query('SxAsset');q.equalTo('owner',u);q.equalTo('host',p.host);const old=await q.first({useMasterKey:true});if(old)return {id:old.id,host:p.host,existing:true};const a=obj('SxAsset',{owner:u,url:p.url,host:p.host,status:'registered'});await a.save(null,{useMasterKey:true});return {id:a.id,host:p.host,existing:false};});
+Parse.Cloud.define('sentrixListAssets',async r=>{const q=new Parse.Query('SxAsset');q.equalTo('owner',user(r));return (await q.find({useMasterKey:true})).map(a=>({id:a.id,url:a.get('url'),host:a.get('host'),status:a.get('status')}));});
+Parse.Cloud.define('sentrixDeleteAsset',async r=>{const q=new Parse.Query('SxAsset');q.equalTo('objectId',clean(r.params.assetId,64,'ASSET_ID'));q.equalTo('owner',user(r));const a=await q.first({useMasterKey:true});if(!a)throw new Error('ASSET_NOT_FOUND');await a.destroy({useMasterKey:true});return {deleted:true};});
+Parse.Cloud.define('sentrixCreateAssessmentRequest',async r=>{const u=user(r);if(r.params.authorizationConfirmed!==true)throw new Error('AUTHORIZATION_REQUIRED');const q=new Parse.Query('SxAsset');q.equalTo('objectId',clean(r.params.assetId,64,'ASSET_ID'));q.equalTo('owner',u);const a=await q.first({useMasterKey:true});if(!a)throw new Error('ASSET_NOT_FOUND');const x=obj('SxAssessment',{owner:u,asset:a,status:'requested',scopeNote:String(r.params.scopeNote||'').slice(0,1000),scannerEnabled:false});await x.save(null,{useMasterKey:true});return {id:x.id,status:'requested',scannerEnabled:false};});
+['SxDomain','SxAuditEvent','SxPageEvent','SxSecurityEvent','SxAssessment','SxAsset'].forEach(c=>Parse.Cloud.beforeSave(c,r=>{if(!r.master)throw new Error('SERVER_WRITE_ONLY');}));
