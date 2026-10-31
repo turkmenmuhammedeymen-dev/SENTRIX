@@ -46,12 +46,12 @@ function downloadVerification(d){
  if(!payload.content||!payload.fileName){status('domainNotice','Doğrulama dosyası alınamadı. Alan adını yeniden eklemeyi dene.');return;}
  const blob=new Blob([payload.content],{type:'text/plain;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');
  a.href=url;a.download=payload.fileName;document.body.append(a);a.click();a.remove();URL.revokeObjectURL(url);
- status('domainNotice','Dosya indirildi. GitHub projenin .well-known klasörüne '+payload.fileName+' adıyla yükle, commit/publish et ve sonra Dosyayı kontrol et.');
+ status('domainNotice','Dosya indirildi. GitHub deposunun kökünde .well-known klasörü oluştur; dosyayı .well-known/'+payload.fileName+' yoluna ekle, commit et ve sitenin yayınlanmasını bekle. SENTRIX dosyayı canlı HTTPS adresinden tarar; depoya yüklemek tek başına yeterli değildir.');
 }
 async function verifyDomain(id){
  status('domainNotice','Mülke ait özel doğrulama dosyası aranıyor…');
  try{const r=await api('sentrixVerifyDomain',{domainId:id});
-  if(!r.verified){status('domainNotice','Başarısız: doğrulama dosyası bulunamadı veya içeriği eşleşmedi. Mülk doğrulanmadı. Dosyanın .well-known klasöründe ve yayınlanmış olduğundan emin ol.');return;}
+  if(!r.verified){const why=r.reason==='HOST_NOT_PUBLIC'?'Alan adı herkese açık bir sunucuya çözülmüyor.':r.reason==='VERIFICATION_FETCH_FAILED'?'SENTRIX doğrulama adresine HTTPS üzerinden ulaşamadı.':r.reason==='VERIFICATION_REDIRECT_REJECTED'?'Güvenlik nedeniyle farklı bir alan adına yönlendirme kabul edilmedi.':'Dosya yayındaki sitede bulunamadı veya içeriği bu mülke ait anahtarla eşleşmedi.';status('domainNotice','DOĞRULAMA BAŞARISIZ — '+why+' Mülk doğrulanmadı. Dosya yolu: /.well-known/'+(domains.find(x=>x.id===id)?.verification?.fileName||'sentrix-verify-….txt')+'. Dosyayı GitHub deposunda bu klasöre ekleyip değişiklikleri yayınla; yalnızca depoya yüklemek yeterli değildir.');return;}
   const d=domains.find(x=>x.id===id);if(d){d.verified=true;d.verification=null;}renderDomains();
   status('domainNotice','Başarılı: '+(d?d.host:'Mülk')+' sahipliği doğrulandı.');await openProperty(id);
  }catch(e){status('domainNotice','Doğrulama başarısız; mülk doğrulanmadı: '+message(e));}
