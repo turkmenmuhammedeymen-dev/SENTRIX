@@ -2,21 +2,14 @@
 
 SENTRIX is an independent, defensive security-awareness workspace for assets a user owns or is explicitly authorized to assess.
 
-## Current starter
+## Starter interface
 - Responsive landing page and animated intro.
-- Asset URL input with local-only validation/demo feedback.
-- Clear disclosure that no backend scanner is connected and no real scan is performed.
+- Local-only asset URL form; no real scan is performed.
 
-## Safety and accuracy
-- No unauthorized access, exploitation, credential collection, stealth, or third-party targeting.
-- Never display fabricated scan results or security scores.
-- Future assessments must be explicitly authorized, rate-limited, logged, and executed server-side with clear scope controls.
+## Backend foundation
+- Supabase migration for profiles, owned assets, assessment records, findings, and audit events.
+- Row Level Security policies; privileged assessment writes are server-only.
+- Setup guide: [BACKEND_SETUP.md](BACKEND_SETUP.md).
 
-## Run
-Open `index.html` in a modern browser. No build step is required.
-
-## Roadmap
-1. Secure authentication and server-side asset ownership.
-2. Verified, permission-gated passive checks.
-3. Findings history, remediation guidance, and audit logs.
-4. Deployment, privacy review, and automated tests.
+## Safety
+No unauthorized access, exploitation, credential collection, stealth, or third-party targeting. No fabricated scan results or scores. A real scanner requires explicit authorization, scope verification, server-side execution, rate limits, and audit logs.
