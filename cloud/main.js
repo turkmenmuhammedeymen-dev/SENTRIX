@@ -347,7 +347,7 @@ Parse.Cloud.define('sentrixCreateAssessmentRequest',async r=>{await sentrixBoots
  * OAuth tokens are encrypted before persistence and never returned to clients.
  */
 async function githubConfig() {
-  const cfg = await Parse.Config.get();
+  const cfg = await Parse.Config.get({useMasterKey:true});
   const clientId = cfg && cfg.get('SENTRIX_GITHUB_CLIENT_ID');
   const keyHex = cfg && cfg.get('SENTRIX_GITHUB_TOKEN_ENCRYPTION_KEY');
   if (typeof clientId !== 'string' || !clientId.trim()) throw new Error('GITHUB_OAUTH_NOT_CONFIGURED');
