@@ -2,7 +2,7 @@
 'use strict';
 const cfg=window.APP_BACK4APP,$=id=>document.getElementById(id);
 const status=(id,msg)=>{const el=$(id);if(el)el.textContent=msg;};
-let mode='login',domains=[],currentUser=null;
+let mode='login',domains=[],currentUser=null,propertyRouteLoading=false;
 const modal=$('authModal');
 function openAuth(next){mode=next;renderAuth();modal.classList.remove('hidden');$('authEmail').focus();}
 function renderAuth(){const signup=mode==='signup';$('authTitle').textContent=signup?'Hesap oluştur':'Hesabına giriş yap';$('authSubmit').textContent=signup?'Kayıt ol':'Giriş yap';$('nameLabel').classList.toggle('hidden',!signup);$('authName').required=signup;$('authPassword').autocomplete=signup?'new-password':'current-password';$('authSwitch').textContent=signup?'Zaten hesabın var mı? Giriş yap':'Hesabın yok mu? Kayıt ol';status('authMessage','');}
@@ -21,6 +21,7 @@ function setPublic(){
 }
 async function loadWorkspace(){
  try{domains=await api('sentrixListDomains');renderDomains();
+ const route=location.hash.match(/^#property\/(.+)$/);if(route)await openProperty(decodeURIComponent(route[1]),false);
  const d=await api('sentrixGetOverview');
  $('statViews').textContent=Number(d.pageViews||0).toLocaleString('tr-TR');
  $('statSessions').textContent=Number(d.sessions||0).toLocaleString('tr-TR');
@@ -76,9 +77,17 @@ async function deleteDomain(d){
 function addDetailRow(parent,label,value){
  const row=document.createElement('div');row.className='detail-row';const k=document.createElement('span'),v=document.createElement('strong');k.textContent=label;v.textContent=value==null?'—':String(value);row.append(k,v);parent.append(row);
 }
-async function openProperty(id){
+function setPropertyPage(active){
+ const dashboard=$('dashboard'),detail=$('propertyDetail');
+ [...dashboard.children].forEach(el=>{if(el!==detail)el.classList.toggle('hidden',active);});
+ detail.classList.toggle('hidden',!active);
+ if(active){window.scrollTo({top:0,behavior:'auto'});document.title='Mülk · SENTRIX';}
+ else{document.title='SENTRIX — Security Intelligence';}
+}
+async function openProperty(id,updateRoute=true){
  const d=domains.find(x=>x.id===id);if(!d)return;
- $('domainForm').classList.add('hidden');$('domainList').classList.add('hidden');$('propertyDetail').classList.remove('hidden');
+ if(updateRoute&&location.hash!=='#property/'+encodeURIComponent(id))history.pushState({propertyId:id},'', '#property/'+encodeURIComponent(id));
+ setPropertyPage(true);
  const root=$('propertyDetailContent');root.replaceChildren();
  const heading=document.createElement('div');heading.className='section';const eyebrow=document.createElement('div');eyebrow.className='eyebrow';eyebrow.textContent='PROPERTY WORKSPACE';
  const h=document.createElement('h2');h.textContent=d.host;const p=document.createElement('p');p.className='lead';p.textContent=d.url;
@@ -98,7 +107,14 @@ async function openProperty(id){
   const assets=document.createElement('section');assets.className='detail-section';const ah=document.createElement('h3');ah.textContent='İlişkili varlıklar';assets.append(ah);
   if(!data.assets.length){const empty=document.createElement('p');empty.textContent='Bu mülke bağlı ek varlık yok.';assets.append(empty);}
   data.assets.forEach(x=>{const r=document.createElement('div');r.className='detail-row';r.textContent=x.url+' · '+x.status;assets.append(r);});panel.append(assets);
-  const tracking=document.createElement('section');tracking.className='detail-section tracker-status '+(data.tracker&&data.tracker.active?'is-connected':'is-pending');\n  const th=document.createElement('h3');th.textContent='SENTRIX izleme bağlantısı';tracking.append(th);\n  const state=document.createElement('div');state.className='tracker-state '+(data.tracker&&data.tracker.active?'connected':'pending');\n  state.textContent=data.tracker&&data.tracker.active?'✓ İzleme kodu doğru yüklendi ve SENTRIX veri alıyor':data.tracker&&data.tracker.installed?'! Tracker daha önce veri gönderdi; son 24 saatte yeni sinyal alınmadı':'○ İzleme kodu henüz tespit edilmedi';tracking.append(state);\n  const last=document.createElement('p');last.className='notice';last.textContent=data.tracker&&data.tracker.lastSeenAt?'Son başarılı sinyal: '+new Date(data.tracker.lastSeenAt).toLocaleString('tr-TR'):'SENTRIX, doğrulanmış alan adından ilk başarılı sayfa görüntüleme isteğini bekliyor.';tracking.append(last);\n  if(!(data.tracker&&data.tracker.active))tracking.append(makeButton('İzleme kodunu göster','primary',()=>showSnippet(d)));\n  tracking.append(makeButton('Durumu yeniden kontrol et','',()=>openProperty(id)));\n  panel.prepend(tracking);
+  const tracking=document.createElement('section');tracking.className='detail-section tracker-status '+(data.tracker&&data.tracker.active?'is-connected':'is-pending');
+  const th=document.createElement('h3');th.textContent='SENTRIX izleme bağlantısı';tracking.append(th);
+  const state=document.createElement('div');state.className='tracker-state '+(data.tracker&&data.tracker.active?'connected':'pending');
+  state.textContent=data.tracker&&data.tracker.active?'✓ İzleme kodu doğru yüklendi ve SENTRIX veri alıyor':data.tracker&&data.tracker.installed?'! Tracker daha önce veri gönderdi; son 24 saatte yeni sinyal alınmadı':'○ İzleme kodu henüz tespit edilmedi';tracking.append(state);
+  const last=document.createElement('p');last.className='notice';last.textContent=data.tracker&&data.tracker.lastSeenAt?'Son başarılı sinyal: '+new Date(data.tracker.lastSeenAt).toLocaleString('tr-TR'):'SENTRIX, doğrulanmış alan adından ilk başarılı sayfa görüntüleme isteğini bekliyor.';tracking.append(last);
+  if(!(data.tracker&&data.tracker.active))tracking.append(makeButton('İzleme kodunu göster','primary',()=>showSnippet(d)));
+  tracking.append(makeButton('Durumu yeniden kontrol et','',()=>openProperty(id)));
+  panel.prepend(tracking);
  }catch(e){panel.textContent='Mülk verileri yüklenemedi: '+message(e);}
 }
 function showSnippet(d){
@@ -235,5 +251,5 @@ $('githubDisconnectBtn').addEventListener('click',async()=>{
  finally{b.disabled=false;}
 });
 
-const current=Parse.User.current();if(current)setAuthenticated(current);else setPublic();
+(async()=>{try{const current=await Parse.User.currentAsync();if(current&&current.getSessionToken()){setAuthenticated(current);}else{setPublic();}}catch(e){try{await Parse.User.logOut();}catch(_){}setPublic();}})();
 })();
