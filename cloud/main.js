@@ -38,6 +38,30 @@ const SENTRIX_FEATURE_REGISTRY = {
       }
     }
   },
+  githubOwnership: {
+    classes: {
+      SxGitHubConnection: {
+        fields: {
+          owner:{type:'Pointer',targetClass:'_User'}, githubId:{type:'String'}, login:{type:'String'},
+          encryptedToken:{type:'String'}, tokenIv:{type:'String'}, tokenTag:{type:'String'},
+          scopes:{type:'String'}, connectedAt:{type:'Date'}
+        },
+        indexes: { owner:{'_p_owner':1} },
+        access:'cloud-only'
+      },
+      SxGitHubRepo: {
+        fields: {
+          owner:{type:'Pointer',targetClass:'_User'}, connection:{type:'Pointer',targetClass:'SxGitHubConnection'},
+          repositoryId:{type:'String'}, fullName:{type:'String'}, htmlUrl:{type:'String'},
+          repositoryOwner:{type:'String'}, repositoryOwnerType:{type:'String'},
+          githubLogin:{type:'String'}, permission:{type:'String'}, verificationType:{type:'String'},
+          verified:{type:'Boolean'}, verifiedAt:{type:'Date'}
+        },
+        indexes: { ownerRepo:{'_p_owner':1,fullName:1}, repoId:{repositoryId:1} },
+        access:'cloud-only'
+      }
+    }
+  },
   analytics: {
     classes: {
       SxPageEvent: {
@@ -308,4 +332,125 @@ Parse.Cloud.define('sentrixAddAsset',async r=>{await sentrixBootstrapOnLoad;cons
 Parse.Cloud.define('sentrixListAssets',async r=>{await sentrixBootstrapOnLoad;const q=new Parse.Query('SxAsset');q.equalTo('owner',user(r));return (await q.find({useMasterKey:true})).map(a=>({id:a.id,url:a.get('url'),host:a.get('host'),status:a.get('status')}));});
 Parse.Cloud.define('sentrixDeleteAsset',async r=>{await sentrixBootstrapOnLoad;const q=new Parse.Query('SxAsset');q.equalTo('objectId',clean(r.params.assetId,64,'ASSET_ID'));q.equalTo('owner',user(r));const a=await q.first({useMasterKey:true});if(!a)throw new Error('ASSET_NOT_FOUND');await a.destroy({useMasterKey:true});return {deleted:true};});
 Parse.Cloud.define('sentrixCreateAssessmentRequest',async r=>{await sentrixBootstrapOnLoad;const u=user(r);if(r.params.authorizationConfirmed!==true)throw new Error('AUTHORIZATION_REQUIRED');const q=new Parse.Query('SxAsset');q.equalTo('objectId',clean(r.params.assetId,64,'ASSET_ID'));q.equalTo('owner',u);const a=await q.first({useMasterKey:true});if(!a)throw new Error('ASSET_NOT_FOUND');const x=obj('SxAssessment',{owner:u,asset:a,status:'requested',scopeNote:String(r.params.scopeNote||'').slice(0,1000),scannerEnabled:false});await x.save(null,{useMasterKey:true});return {id:x.id,status:'requested',scannerEnabled:false};});
+
+/* GitHub repository ownership verification.
+ * Requires Back4App Config:
+ * SENTRIX_GITHUB_CLIENT_ID (OAuth App with Device Flow enabled)
+ * SENTRIX_GITHUB_TOKEN_ENCRYPTION_KEY (64 hex characters; random 32-byte key)
+ * OAuth tokens are encrypted before persistence and never returned to clients.
+ */
+function githubConfig() {
+  const cfg = Parse.Config.current();
+  const clientId = cfg && cfg.get('SENTRIX_GITHUB_CLIENT_ID');
+  const keyHex = cfg && cfg.get('SENTRIX_GITHUB_TOKEN_ENCRYPTION_KEY');
+  if (typeof clientId !== 'string' || !clientId.trim()) throw new Error('GITHUB_OAUTH_NOT_CONFIGURED');
+  if (typeof keyHex !== 'string' || !/^[a-f0-9]{64}$/i.test(keyHex)) throw new Error('GITHUB_TOKEN_ENCRYPTION_NOT_CONFIGURED');
+  return {clientId:clientId.trim(),key:Buffer.from(keyHex,'hex')};
+}
+function encryptGitHubToken(token,key) {
+  const iv=crypto.randomBytes(12),cipher=crypto.createCipheriv('aes-256-gcm',key,iv);
+  const encrypted=Buffer.concat([cipher.update(token,'utf8'),cipher.final()]);
+  return {encryptedToken:encrypted.toString('base64'),tokenIv:iv.toString('base64'),tokenTag:cipher.getAuthTag().toString('base64')};
+}
+function decryptGitHubToken(row,key) {
+  const decipher=crypto.createDecipheriv('aes-256-gcm',key,Buffer.from(row.get('tokenIv'),'base64'));
+  decipher.setAuthTag(Buffer.from(row.get('tokenTag'),'base64'));
+  return Buffer.concat([decipher.update(Buffer.from(row.get('encryptedToken'),'base64')),decipher.final()]).toString('utf8');
+}
+async function githubRequest(url,token,options={}) {
+  const headers=Object.assign({Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','User-Agent':'SENTRIX-Security-Intelligence'},options.headers||{});
+  if(token) headers.Authorization='Bearer '+token;
+  const response=await fetch(url,Object.assign({},options,{headers,signal:AbortSignal.timeout(15000)}));
+  const raw=await response.text();
+  let data={};try{data=raw?JSON.parse(raw):{};}catch(_){throw new Error('GITHUB_INVALID_RESPONSE');}
+  if(!response.ok) {
+    if(response.status===401) throw new Error('GITHUB_TOKEN_INVALID_OR_REVOKED');
+    if(response.status===403) throw new Error('GITHUB_PERMISSION_DENIED_OR_RATE_LIMITED');
+    if(response.status===404) throw new Error('GITHUB_REPOSITORY_NOT_FOUND_OR_NOT_ACCESSIBLE');
+    throw new Error('GITHUB_API_ERROR_'+response.status);
+  }
+  return data;
+}
+async function githubConnectionFor(u) {
+  const q=new Parse.Query('SxGitHubConnection');q.equalTo('owner',u);q.descending('connectedAt');
+  return q.first({useMasterKey:true});
+}
+Parse.Cloud.define('sentrixGitHubDeviceStart',async r=>{
+  const u=user(r),cfg=githubConfig();
+  const body=new URLSearchParams({client_id:cfg.clientId,scope:'repo'}).toString();
+  const response=await fetch('https://github.com/login/device/code',{method:'POST',headers:{Accept:'application/json','Content-Type':'application/x-www-form-urlencoded'},body,signal:AbortSignal.timeout(15000)});
+  const data=await response.json();
+  if(!response.ok||!data.device_code||!data.user_code||!data.verification_uri) throw new Error('GITHUB_DEVICE_FLOW_START_FAILED');
+  return {deviceCode:data.device_code,userCode:data.user_code,verificationUri:data.verification_uri,expiresIn:Number(data.expires_in)||900,interval:Math.max(5,Number(data.interval)||5)};
+});
+Parse.Cloud.define('sentrixGitHubDevicePoll',async r=>{
+  const u=user(r),cfg=githubConfig(),deviceCode=clean(r.params.deviceCode,512,'DEVICE_CODE');
+  const body=new URLSearchParams({client_id:cfg.clientId,device_code:deviceCode,grant_type:'urn:ietf:params:oauth:grant-type:device_code'}).toString();
+  const response=await fetch('https://github.com/login/oauth/access_token',{method:'POST',headers:{Accept:'application/json','Content-Type':'application/x-www-form-urlencoded'},body,signal:AbortSignal.timeout(15000)});
+  const data=await response.json();
+  if(data.error==='authorization_pending'||data.error==='slow_down') return {pending:true,interval:data.error==='slow_down'?10:5};
+  if(data.error==='expired_token'||data.error==='access_denied') return {connected:false,reason:data.error==='expired_token'?'GITHUB_DEVICE_CODE_EXPIRED':'GITHUB_ACCESS_DENIED'};
+  if(!response.ok||!data.access_token) throw new Error('GITHUB_TOKEN_EXCHANGE_FAILED');
+  const profile=await githubRequest('https://api.github.com/user',data.access_token);
+  if(!profile||!profile.id||!profile.login) throw new Error('GITHUB_PROFILE_INVALID');
+  const encrypted=encryptGitHubToken(data.access_token,cfg.key);
+  let connection=await githubConnectionFor(u);
+  if(!connection) connection=obj('SxGitHubConnection',{owner:u});
+  connection.set('githubId',String(profile.id));connection.set('login',profile.login);
+  connection.set('encryptedToken',encrypted.encryptedToken);connection.set('tokenIv',encrypted.tokenIv);
+  connection.set('tokenTag',encrypted.tokenTag);connection.set('scopes',String(data.scope||''));
+  connection.set('connectedAt',new Date());
+  await connection.save(null,{useMasterKey:true});
+  await audit(u,null,'github.connected');
+  return {connected:true,login:profile.login,githubId:String(profile.id)};
+});
+Parse.Cloud.define('sentrixGitHubConnectionStatus',async r=>{
+  const u=user(r),connection=await githubConnectionFor(u);
+  return connection?{connected:true,login:connection.get('login'),githubId:connection.get('githubId'),connectedAt:connection.get('connectedAt')||null}:{connected:false};
+});
+Parse.Cloud.define('sentrixGitHubVerifyRepository',async r=>{
+  const u=user(r),raw=clean(r.params.repositoryUrl,500,'REPOSITORY_URL');
+  let parsed;try{parsed=new URL(raw.includes('://')?raw:'https://'+raw);}catch(_){throw new Error('GITHUB_REPOSITORY_URL_INVALID');}
+  if(parsed.protocol!=='https:'||parsed.hostname.toLowerCase()!=='github.com') throw new Error('GITHUB_REPOSITORY_URL_INVALID');
+  const parts=parsed.pathname.split('/').filter(Boolean);
+  if(parts.length<2||!/^[-a-zA-Z0-9_.]+$/.test(parts[0])||!/^[-a-zA-Z0-9_.]+$/.test(parts[1])) throw new Error('GITHUB_REPOSITORY_URL_INVALID');
+  const fullName=parts[0]+'/'+parts[1].replace(/\.git$/i,'');
+  const connection=await githubConnectionFor(u);if(!connection)throw new Error('GITHUB_ACCOUNT_NOT_CONNECTED');
+  const cfg=githubConfig(),token=decryptGitHubToken(connection,cfg.key);
+  const [profile,repo]=await Promise.all([
+    githubRequest('https://api.github.com/user',token),
+    githubRequest('https://api.github.com/repos/'+encodeURIComponent(parts[0])+'/'+encodeURIComponent(parts[1].replace(/\.git$/i,'')),token)
+  ]);
+  const permission=repo.permissions||{};
+  const isPersonalOwner=String(repo.owner&&repo.owner.login||'').toLowerCase()===String(profile.login).toLowerCase();
+  const isAdmin=permission.admin===true;
+  const verified=isAdmin&&(isPersonalOwner||String(repo.owner&&repo.owner.type)==='Organization');
+  const verificationType=isPersonalOwner&&isAdmin?'PERSONAL_REPOSITORY_OWNER':isAdmin?'ORGANIZATION_REPOSITORY_ADMIN':null;
+  const q=new Parse.Query('SxGitHubRepo');q.equalTo('owner',u);q.equalTo('repositoryId',String(repo.id));
+  let record=await q.first({useMasterKey:true});
+  if(!record)record=obj('SxGitHubRepo',{owner:u,connection});
+  record.set('connection',connection);record.set('repositoryId',String(repo.id));
+  record.set('fullName',repo.full_name||fullName);record.set('htmlUrl',repo.html_url);
+  record.set('repositoryOwner',repo.owner.login);record.set('repositoryOwnerType',repo.owner.type);
+  record.set('githubLogin',profile.login);record.set('permission',isAdmin?'admin':permission.maintain?'maintain':permission.push?'push':permission.pull?'pull':'none');
+  record.set('verified',verified);record.set('verificationType',verificationType);
+  if(verified)record.set('verifiedAt',new Date());
+  await record.save(null,{useMasterKey:true});
+  if(!verified) return {verified:false,status:'NOT_VERIFIED',reason:!permission.admin?'ADMIN_PERMISSION_REQUIRED':'ACCOUNT_OWNER_MISMATCH',repository:repo.full_name,githubLogin:profile.login,permission:record.get('permission'),owner:repo.owner.login,ownerType:repo.owner.type};
+  await audit(u,null,'github.repository.verified');
+  return {verified:true,status:'VERIFIED',verificationType,repository:repo.full_name,repositoryUrl:repo.html_url,githubLogin:profile.login,owner:repo.owner.login,ownerType:repo.owner.type,permission:'admin',verifiedAt:record.get('verifiedAt')};
+});
+Parse.Cloud.define('sentrixGitHubListRepositories',async r=>{
+  const u=user(r),q=new Parse.Query('SxGitHubRepo');q.equalTo('owner',u);q.descending('verifiedAt');q.limit(100);
+  return (await q.find({useMasterKey:true})).map(x=>({id:x.id,repository:x.get('fullName'),repositoryUrl:x.get('htmlUrl'),owner:x.get('repositoryOwner'),ownerType:x.get('repositoryOwnerType'),githubLogin:x.get('githubLogin'),permission:x.get('permission'),verified:x.get('verified')===true,verificationType:x.get('verificationType'),verifiedAt:x.get('verifiedAt')||null}));
+});
+Parse.Cloud.define('sentrixGitHubDisconnect',async r=>{
+  const u=user(r),connection=await githubConnectionFor(u);
+  if(!connection)return {disconnected:true};
+  const q=new Parse.Query('SxGitHubRepo');q.equalTo('owner',u);const repos=await q.find({useMasterKey:true});
+  for(let i=0;i<repos.length;i+=100)await Parse.Object.destroyAll(repos.slice(i,i+100),{useMasterKey:true});
+  await connection.destroy({useMasterKey:true});await audit(u,null,'github.disconnected');
+  return {disconnected:true};
+});
+
 ['SxDomain','SxAuditEvent','SxPageEvent','SxSecurityEvent','SxAssessment','SxAsset'].forEach(c=>Parse.Cloud.beforeSave(c,r=>{if(!r.master)throw new Error('SERVER_WRITE_ONLY');}));
