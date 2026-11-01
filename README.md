@@ -21,3 +21,7 @@ The current backend does **not** run a vulnerability scanner. Assessment request
 
 ## Setup
 Follow [BACKEND_SETUP.md](BACKEND_SETUP.md). GitHub OAuth App setup and Back4App Config values are required before GitHub repository verification can run. Each project must use its own Back4App app and credentials. Never put the Master Key or GitHub token-encryption key in browser code or Git.
+
+
+## Advanced analytics
+Approximate GeoIP, aggregate coordinate heatmaps, anonymous journey-step counts, AI summaries, Apps Script email alerts, PDF via browser print, and heuristic security/uplink alerts. See BACKEND_SETUP.md for required Back4App Config values and deployment.
