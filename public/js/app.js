@@ -1,8 +1,9 @@
+/* SENTRIX deploy refresh: 2026-11-01 — syntax-checked source. */
 (() => {
 'use strict';
 const cfg=window.APP_BACK4APP,$=id=>document.getElementById(id);
 const status=(id,msg)=>{const el=$(id);if(el)el.textContent=msg;};
-let mode='login',domains=[],currentUser=null;
+let mode='login',domains=[],currentUser=null,propertyRouteLoading=false;
 const modal=$('authModal');
 function openAuth(next){mode=next;renderAuth();modal.classList.remove('hidden');$('authEmail').focus();}
 function renderAuth(){const signup=mode==='signup';$('authTitle').textContent=signup?'Hesap oluştur':'Hesabına giriş yap';$('authSubmit').textContent=signup?'Kayıt ol':'Giriş yap';$('nameLabel').classList.toggle('hidden',!signup);$('authName').required=signup;$('authPassword').autocomplete=signup?'new-password':'current-password';$('authSwitch').textContent=signup?'Zaten hesabın var mı? Giriş yap':'Hesabın yok mu? Kayıt ol';status('authMessage','');}
@@ -21,11 +22,13 @@ function setPublic(){
 }
 async function loadWorkspace(){
  try{domains=await api('sentrixListDomains');renderDomains();
+ const route=location.hash.match(/^#property\/(.+)$/);if(route)await openProperty(decodeURIComponent(route[1]),false);
  const d=await api('sentrixGetOverview');
  $('statViews').textContent=Number(d.pageViews||0).toLocaleString('tr-TR');
  $('statSessions').textContent=Number(d.sessions||0).toLocaleString('tr-TR');
  $('statSecurity').textContent=Number(d.securityEvents||0).toLocaleString('tr-TR');
  }catch(e){status('domainNotice','Panel verileri alınamadı: '+message(e));}
+ try{await refreshGitHubState();}catch(e){status('githubRepoNotice','GitHub doğrulama servisi şu an kullanılamıyor: '+message(e));}
 }
 function makeButton(label,cls,fn){const b=document.createElement('button');b.className='btn '+(cls||'');b.textContent=label;b.addEventListener('click',fn);return b;}
 function renderDomains(){
@@ -75,9 +78,17 @@ async function deleteDomain(d){
 function addDetailRow(parent,label,value){
  const row=document.createElement('div');row.className='detail-row';const k=document.createElement('span'),v=document.createElement('strong');k.textContent=label;v.textContent=value==null?'—':String(value);row.append(k,v);parent.append(row);
 }
-async function openProperty(id){
+function setPropertyPage(active){
+ const dashboard=$('dashboard'),detail=$('propertyDetail');
+ [...dashboard.children].forEach(el=>{if(el!==detail)el.classList.toggle('hidden',active);});
+ detail.classList.toggle('hidden',!active);
+ if(active){window.scrollTo({top:0,behavior:'auto'});document.title='Mülk · SENTRIX';}
+ else{document.title='SENTRIX — Security Intelligence';}
+}
+async function openProperty(id,updateRoute=true){
  const d=domains.find(x=>x.id===id);if(!d)return;
- $('domainForm').classList.add('hidden');$('domainList').classList.add('hidden');$('propertyDetail').classList.remove('hidden');
+ if(updateRoute&&location.hash!=='#property/'+encodeURIComponent(id))history.pushState({propertyId:id},'', '#property/'+encodeURIComponent(id));
+ setPropertyPage(true);
  const root=$('propertyDetailContent');root.replaceChildren();
  const heading=document.createElement('div');heading.className='section';const eyebrow=document.createElement('div');eyebrow.className='eyebrow';eyebrow.textContent='PROPERTY WORKSPACE';
  const h=document.createElement('h2');h.textContent=d.host;const p=document.createElement('p');p.className='lead';p.textContent=d.url;
@@ -97,15 +108,100 @@ async function openProperty(id){
   const assets=document.createElement('section');assets.className='detail-section';const ah=document.createElement('h3');ah.textContent='İlişkili varlıklar';assets.append(ah);
   if(!data.assets.length){const empty=document.createElement('p');empty.textContent='Bu mülke bağlı ek varlık yok.';assets.append(empty);}
   data.assets.forEach(x=>{const r=document.createElement('div');r.className='detail-row';r.textContent=x.url+' · '+x.status;assets.append(r);});panel.append(assets);
-  if(d.verified)panel.append(makeButton('İzleme kodunu göster','',()=>showSnippet(d)));
+  const tracking=document.createElement('section');tracking.className='detail-section tracker-status '+(data.tracker&&data.tracker.active?'is-connected':'is-pending');
+  const th=document.createElement('h3');th.textContent='SENTRIX izleme bağlantısı';tracking.append(th);
+  const state=document.createElement('div');state.className='tracker-state '+(data.tracker&&data.tracker.active?'connected':'pending');
+  state.textContent=data.tracker&&data.tracker.active?'✓ İzleme kodu doğru yüklendi ve SENTRIX veri alıyor':data.tracker&&data.tracker.installed?'! Tracker daha önce veri gönderdi; son 24 saatte yeni sinyal alınmadı':'○ İzleme kodu henüz tespit edilmedi';tracking.append(state);
+  const last=document.createElement('p');last.className='notice';last.textContent=data.tracker&&data.tracker.lastSeenAt?'Son başarılı sinyal: '+new Date(data.tracker.lastSeenAt).toLocaleString('tr-TR'):'SENTRIX, doğrulanmış alan adından ilk başarılı sayfa görüntüleme isteğini bekliyor.';tracking.append(last);
+  if(!(data.tracker&&data.tracker.active))tracking.append(makeButton('İzleme kodunu göster','primary',()=>showSnippet(d)));
+  tracking.append(makeButton('Durumu yeniden kontrol et','',()=>openProperty(id)));
+  panel.prepend(tracking);
  }catch(e){panel.textContent='Mülk verileri yüklenemedi: '+message(e);}
 }
 function showSnippet(d){
  const code=d.snippet||'';
- if(!code){status('domainNotice','İzleme kodu alınamadı.');return;}
- const box=document.createElement('div');box.className='snippet-box';const p=document.createElement('p');p.textContent='Bu kodu mülkünün sayfalarında kapanış body etiketinden önce kullan:';const pre=document.createElement('pre');pre.textContent=code;
- const b=makeButton('Kodu kopyala','primary',async()=>{try{await navigator.clipboard.writeText(code);b.textContent='Kopyalandı';}catch(e){b.textContent='Kopyalama başarısız';}});box.append(p,pre,b);$('propertyDetailContent').prepend(box);
+ if(!code){status('domainNotice','İzleme kodu henüz alınamadı. Mülk ayrıntılarını yenileyip tekrar dene.');return;}
+ const root=$('propertyDetailContent');
+ const previous=root.querySelector('.snippet-box');if(previous)previous.remove();
+ const box=document.createElement('div');box.className='snippet-box card';
+ const title=document.createElement('h3');title.textContent='SENTRIX izleme kodu';
+ const p=document.createElement('p');p.textContent='Aşağıdaki kodu, doğrulanmış mülkünün tüm sayfalarında kapanış </body> etiketinden hemen önce ekle. Yayınladıktan sonra siteyi ziyaret ederek veri akışını başlat.';
+ const pre=document.createElement('pre');pre.textContent=code;
+ const b=makeButton('Kodu kopyala','primary',async()=>{
+  try{
+   if(navigator.clipboard&&window.isSecureContext)await navigator.clipboard.writeText(code);
+   else {const ta=document.createElement('textarea');ta.value=code;ta.setAttribute('readonly','');ta.style.position='absolute';ta.style.left='-9999px';document.body.append(ta);ta.select();const ok=document.execCommand('copy');ta.remove();if(!ok)throw new Error('COPY_FAILED');}
+   b.textContent='Kopyalandı';
+  }catch(e){b.textContent='Kopyalama başarısız';}
+ });
+ const close=makeButton('Kapat','',()=>box.remove());
+ box.append(title,p,pre,b,close);root.prepend(box);box.scrollIntoView({behavior:'smooth',block:'center'});
 }
+
+let githubDeviceCode=null;
+function renderGitHubRepositories(items){
+ const root=$('githubRepoList');if(!root)return;root.replaceChildren();
+ if(!items||!items.length){root.textContent='Henüz doğrulanmış GitHub deposu yok.';return;}
+ items.forEach(item=>{
+  const card=document.createElement('article');card.className='domain-card';
+  const left=document.createElement('div'),name=document.createElement('strong'),meta=document.createElement('p'),badge=document.createElement('span');
+  name.textContent=item.repository;meta.textContent='GitHub hesabı: '+item.githubLogin+' · Yetki: '+(item.permission||'—');
+  badge.className='state '+(item.verified?'good':'pending');
+  badge.textContent=item.verified?(item.verificationType==='PERSONAL_REPOSITORY_OWNER'?'Depo sahibi doğrulandı':'Kuruluş yöneticisi doğrulandı'):'Doğrulanmadı';
+  left.append(name,meta,badge);card.append(left);
+  if(item.repositoryUrl){const a=document.createElement('a');a.className='btn';a.href=item.repositoryUrl;a.target='_blank';a.rel='noopener noreferrer';a.textContent='GitHub deposunu aç';card.append(a);}
+  root.append(card);
+ });
+}
+async function refreshGitHubState(){
+ const state=await api('sentrixGitHubConnectionStatus');
+ const title=$('githubConnectionTitle'),detail=$('githubConnectionText'),connect=$('githubConnectBtn'),disconnect=$('githubDisconnectBtn');
+ if(state.connected){title.textContent='GitHub hesabı bağlı: @'+state.login;detail.textContent='GitHub hesabı SENTRIX ile yetkilendirildi. Depolar için canlı API denetimi yapılabilir.';connect.classList.add('hidden');disconnect.classList.remove('hidden');}
+ else{title.textContent='GitHub hesabı bağlı değil';detail.textContent='Depo mülkiyeti doğrulamak için GitHub hesabını bağla.';connect.classList.remove('hidden');disconnect.classList.add('hidden');}
+ const repos=await api('sentrixGitHubListRepositories');renderGitHubRepositories(repos);
+}
+async function startGitHubDeviceFlow(){
+ const b=$('githubConnectBtn');b.disabled=true;b.textContent='Bağlantı hazırlanıyor…';
+ try{
+  const r=await api('sentrixGitHubDeviceStart');githubDeviceCode=r.deviceCode;
+  $('githubUserCode').textContent=r.userCode;$('githubDevicePanel').classList.remove('hidden');
+  $('githubDeviceNotice').textContent='Kod '+Math.ceil(r.expiresIn/60)+' dakika geçerli. GitHub sayfasında kodu onayla, sonra SENTRIX’e dönüp kontrol et.';
+  $('githubVerifyLink').href=r.verificationUri;
+ }catch(e){status('githubRepoNotice','GitHub bağlantısı başlatılamadı: '+message(e));}
+ finally{b.disabled=false;b.textContent='GitHub hesabını bağla';}
+}
+async function pollGitHubDeviceFlow(){
+ if(!githubDeviceCode){status('githubDeviceNotice','Önce GitHub bağlantısını başlat.');return;}
+ const b=$('githubPollBtn');b.disabled=true;b.textContent='Kontrol ediliyor…';
+ try{
+  const r=await api('sentrixGitHubDevicePoll',{deviceCode:githubDeviceCode});
+  if(r.pending){status('githubDeviceNotice','GitHub onayı henüz tamamlanmadı. GitHub sayfasındaki adımı bitirip tekrar kontrol et.');return;}
+  if(!r.connected){githubDeviceCode=null;status('githubDeviceNotice',r.reason==='GITHUB_ACCESS_DENIED'?'GitHub erişim izni verilmedi. Yeniden bağlanabilirsin.':'Yetkilendirme kodunun süresi doldu. Yeniden başlat.');return;}
+  githubDeviceCode=null;$('githubDevicePanel').classList.add('hidden');
+  status('githubRepoNotice','GitHub hesabı başarıyla bağlandı: @'+r.login+'. Şimdi depo adresini girip doğrulayabilirsin.');
+  await refreshGitHubState();
+ }catch(e){status('githubDeviceNotice','Yetkilendirme kontrol edilemedi: '+message(e));}
+ finally{b.disabled=false;b.textContent='Yetkilendirmeyi kontrol et';}
+}
+async function verifyGitHubRepository(e){
+ e.preventDefault();const b=$('githubRepoVerifyBtn'),url=$('githubRepoUrl').value.trim();
+ if(!url)return;b.disabled=true;b.textContent='GitHub API denetleniyor…';
+ status('githubRepoNotice','GitHub hesabı ve depo izinleri canlı API üzerinden kontrol ediliyor. Henüz doğrulanmadı.');
+ try{
+  const r=await api('sentrixGitHubVerifyRepository',{repositoryUrl:url});
+  if(!r.verified){
+   const why=r.reason==='ADMIN_PERMISSION_REQUIRED'?'Bağlı hesapta depo sahibi/yönetici (admin) yetkisi bulunamadı. Yazma veya katkıcı erişimi sahiplik sayılmaz.':'Depo sahibi ile yetkilendirilmiş GitHub hesabı eşleşmiyor.';
+   status('githubRepoNotice','DOĞRULANMADI — '+why+' Depo: '+(r.repository||url)+' · Hesap: @'+r.githubLogin+' · Yetki: '+r.permission);
+  }else{
+   const label=r.verificationType==='PERSONAL_REPOSITORY_OWNER'?'Kişisel depo sahibi':'Kuruluş deposu yöneticisi';
+   status('githubRepoNotice','DOĞRULANDI — '+label+' yetkisi GitHub API ile doğrulandı. Depo: '+r.repository+' · Hesap: @'+r.githubLogin);
+   $('githubRepoUrl').value='';
+  }
+  await refreshGitHubState();
+ }catch(err){status('githubRepoNotice','DOĞRULANMADI — GitHub doğrulaması tamamlanamadı: '+message(err));}
+ finally{b.disabled=false;b.textContent='Depoyu doğrula';}
+}
+
 if(!window.Parse||!cfg){status('authMessage','Back4App istemci yapılandırması bulunamadı.');return;}
 Parse.initialize(cfg.applicationId,cfg.javascriptKey);Parse.serverURL=cfg.serverURL;
 document.querySelectorAll('[data-open-auth]').forEach(b=>b.addEventListener('click',()=>openAuth(b.dataset.openAuth)));
@@ -136,7 +232,8 @@ $('domainForm').addEventListener('submit',async e=>{
  }catch(err){const detail=message(err);const missingFunction=/invalid function|function[^.]*not found|could not find function/i.test(detail);status('domainNotice',missingFunction?'Sunucu yapılandırması eksik: sentrixCreateDomain Cloud Code fonksiyonu Back4App üzerinde etkin değil. GitHub deposundaki cloud/main.js dosyasını Back4App Cloud Code alanına yükleyip Deploy et. GitHub commit işlemi Back4App dağıtımını otomatik yapmaz. Alan adı verin kaybolmadı; tekrar denemeden önce dağıtımı tamamla.':'Mülk eklenemedi: '+detail+' — Alan adını example.com veya https://example.com biçiminde gir.');}
  finally{b.disabled=false;b.textContent='Alan adı ekle';}
 });
-$('backToProperties').addEventListener('click',()=>{$('propertyDetail').classList.add('hidden');$('domainForm').classList.remove('hidden');$('domainList').classList.remove('hidden');});
+$('backToProperties').addEventListener('click',()=>{history.replaceState({},'',location.pathname+location.search);setPropertyPage(false);});
+window.addEventListener('popstate',()=>{const route=location.hash.match(/^#property\/(.+)$/);if(route&&currentUser){openProperty(decodeURIComponent(route[1]),false);}else if(currentUser){setPropertyPage(false);}});
 $('deleteAccountBtn').addEventListener('click',async()=>{
  const confirmation=window.prompt('Hesabın, mülklerin ve ilişkili verilerin kalıcı olarak silinecek. Devam etmek için DELETE MY ACCOUNT yaz:');
  if(confirmation!=='DELETE MY ACCOUNT'){status('accountNotice','Hesap silme işlemi iptal edildi.');return;}
@@ -146,5 +243,15 @@ $('deleteAccountBtn').addEventListener('click',async()=>{
  finally{b.disabled=false;b.textContent='Hesabımı sil';}
 });
 $('year').textContent=new Date().getFullYear();
-const current=Parse.User.current();if(current)setAuthenticated(current);else setPublic();
+$('githubConnectBtn').addEventListener('click',startGitHubDeviceFlow);
+$('githubPollBtn').addEventListener('click',pollGitHubDeviceFlow);
+$('githubRepoForm').addEventListener('submit',verifyGitHubRepository);
+$('githubDisconnectBtn').addEventListener('click',async()=>{
+ const b=$('githubDisconnectBtn');b.disabled=true;
+ try{await api('sentrixGitHubDisconnect');githubDeviceCode=null;$('githubDevicePanel').classList.add('hidden');status('githubRepoNotice','GitHub bağlantısı kesildi ve doğrulama kayıtları kaldırıldı.');await refreshGitHubState();}
+ catch(e){status('githubRepoNotice','Bağlantı kesilemedi: '+message(e));}
+ finally{b.disabled=false;}
+});
+
+(async()=>{try{const current=await Parse.User.currentAsync();if(current&&current.getSessionToken()){setAuthenticated(current);}else{setPublic();}}catch(e){try{await Parse.User.logOut();}catch(_){}setPublic();}})();
 })();
