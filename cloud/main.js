@@ -197,7 +197,7 @@ const sentrixBootstrapOnLoad = ensureSentrixSchemas()
 
 function obj(c,p){const x=new (Parse.Object.extend(c))();Object.keys(p).forEach(k=>x.set(k,p[k]));return x;}
 async function domainFor(u,id){const q=new Parse.Query('SxDomain');q.equalTo('objectId',clean(id,64,'DOMAIN_ID'));q.equalTo('owner',u);const d=await q.first({useMasterKey:true});if(!d)throw new Error('DOMAIN_NOT_FOUND');return d;}
-async function audit(u,d,type){await obj('SxAuditEvent',{actor:u,domain:d,eventType:type}).save(null,{useMasterKey:true});}
+async function audit(u,d,type){try{await obj('SxAuditEvent',{actor:u,domain:d,eventType:type}).save(null,{useMasterKey:true});}catch(error){console.error('[SENTRIX] audit write failed:',error&&error.message||error);}}
 function snippet(d){return '<script async src="https://cdn.jsdelivr.net/gh/turkmenmuhammedeymen-dev/SENTRIX@main/tracker.js" data-site-id="'+d.get('siteId')+'"></script>';}
 function verificationPayload(d){
   const file=d.get('verificationFile')||('sentrix-verify-'+d.get('siteId')+'.txt');
