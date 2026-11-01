@@ -53,3 +53,8 @@ Hesap yönetimi bölümündeki silme düğmesi kullanıcıdan `DELETE MY ACCOUNT
 - [ ] KVKK aydınlatma ve izin mekanizmasını değerlendir.
 
 **Durum:** Frontend ve temel tracker kaynak kodu repodadır; bunların canlı ortamda çalıştığı, Cloud Code deploy edildiği, MongoDB unique index kurulduğu veya Google/WAF entegrasyonlarının etkin olduğu anlamına gelmez. Canlı uçtan uca test ve dış servis yapılandırması tamamlanmadan sistem üretim için hazır kabul edilmemelidir.
+
+## 10. `Invalid function` hatası: Cloud Code dağıtımı
+
+`Mülk ekle` sırasında `Invalid function: "sentrixCreateDomain"` görülüyorsa alan adı biçimi hatası değildir. `cloud/main.js` içinde `Parse.Cloud.define('sentrixCreateDomain', ...)` tanımı bulunmalıdır ve aynı dosyanın Back4App uygulamasının **Cloud Code / main.js** alanına yüklenip **Deploy** edilmesi gerekir. Yalnızca GitHub'a commit atmak Back4App Cloud Code'u dağıtmaz. Deploy tamamlandıktan sonra `sentrixHealth` fonksiyonunu çağırarak Cloud Code'un yanıt verdiğini, ardından oturumu açık kullanıcıyla `sentrixCreateDomain` çağrısını test edin. `sentrixHealth` çalışıp `sentrixCreateDomain` hâlâ `Invalid function` veriyorsa Back4App'te dağıtılan dosya güncel değildir veya farklı uygulama/ortam hedeflenmiştir. Master Key'i istemciye eklemeyin.
+
