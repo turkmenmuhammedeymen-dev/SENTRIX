@@ -232,7 +232,7 @@ async function isPublicVerificationHost(host) {
   if(h==='localhost'||h.endsWith('.localhost')||h.endsWith('.local')||h.endsWith('.internal')) return false;
   if(net.isIPv4(h)) {
     const p=h.split('.').map(Number);
-    return !(p[0]===10||p[0]===127||p[0]===0||p[0]>=224||(p[0]===169&&p[1]===254)||(p[0]===172&&p[1]>=16&&p[1]<=31)||(p[0]===192&&p[1]===168);
+    return !(p[0]===10||p[0]===127||p[0]===0||p[0]>=224||(p[0]===169&&p[1]===254)||(p[0]===172&&p[1]>=16&&p[1]<=31)||(p[0]===192&&p[1]===168));
   }
   if(net.isIPv6(h)) return !(h==='::1'||/^f[cd]/i.test(h)||/^fe[89ab]/i.test(h)||h==='::');
   const records=await dns.lookup(h,{all:true,verbatim:true});
