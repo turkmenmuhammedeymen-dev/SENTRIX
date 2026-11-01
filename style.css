@@ -28,3 +28,6 @@
 #propertyDetail{min-height:calc(100vh - 110px);padding-top:34px}
 #propertyDetailContent>.section{padding-top:20px}
 #propertyDetailContent>.property-details{max-width:100%;}
+
+/* SENTRIX advanced analytics */
+.detail-section .property-stats{margin:14px 0}.detail-section .notice{line-height:1.6}.detail-section h4{margin:18px 0 8px}.detail-section .btn{margin-top:12px}
