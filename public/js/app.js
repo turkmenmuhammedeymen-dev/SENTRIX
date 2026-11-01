@@ -36,8 +36,11 @@ function renderDomains(){
   const left=document.createElement('div'),title=document.createElement('strong'),meta=document.createElement('p'),badge=document.createElement('span'),actions=document.createElement('div');
   title.textContent=d.host;meta.textContent=d.url;badge.className='state '+(d.verified?'good':'pending');badge.textContent=d.verified?'Sahiplik doğrulandı':'Sahiplik doğrulanmadı';
   left.append(title,meta,badge);actions.className='domain-actions';
-  if(!d.verified){actions.append(makeButton('Doğrulama dosyasını indir','primary',e=>{}));actions.lastChild.addEventListener('click',ev=>{ev.stopPropagation();downloadVerification(d);});actions.append(makeButton('Dosyayı kontrol et','',ev=>{ev.stopPropagation();verifyDomain(d.id);}));}
-  else actions.append(makeButton('Mülkü aç','primary',ev=>{ev.stopPropagation();openProperty(d.id);}));
+  if(!d.verified){
+   actions.append(makeButton('Dosyayı indir','primary',ev=>{ev.stopPropagation();downloadVerification(d);}));
+   actions.append(makeButton('Canlı siteyi tara','',ev=>{ev.stopPropagation();verifyDomain(d.id);}));
+  } else actions.append(makeButton('Mülkü aç','primary',ev=>{ev.stopPropagation();openProperty(d.id);}));
+  actions.append(makeButton('Mülkü sil','danger',ev=>{ev.stopPropagation();deleteDomain(d);}));
   card.append(left,actions);card.addEventListener('click',()=>openProperty(d.id));card.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openProperty(d.id);}});root.append(card);
  });
 }
@@ -55,6 +58,19 @@ async function verifyDomain(id){
   const d=domains.find(x=>x.id===id);if(d){d.verified=true;d.verification=null;}renderDomains();
   status('domainNotice','Başarılı: '+(d?d.host:'Mülk')+' sahipliği doğrulandı.');await openProperty(id);
  }catch(e){status('domainNotice','Doğrulama başarısız; mülk doğrulanmadı: '+message(e));}
+}
+async function deleteDomain(d){
+ const confirmation=window.prompt('Bu mülkü ve ona bağlı SENTRIX kayıtlarını silmek için alan adını aynen yaz: '+d.host);
+ if(confirmation!==d.host){status('domainNotice','Mülk silme işlemi iptal edildi.');return;}
+ const buttons=[...$('domainList').querySelectorAll('button')];buttons.forEach(b=>b.disabled=true);
+ status('domainNotice',d.host+' ve ilişkili kayıtlar siliniyor…');
+ try{
+  await api('sentrixDeleteDomain',{domainId:d.id,confirmation});
+  status('domainNotice',d.host+' mülkü ve ona bağlı SENTRIX kayıtları silindi.');
+  await loadWorkspace();
+  if(!$('propertyDetail').classList.contains('hidden'))$('propertyDetail').classList.add('hidden');
+  $('domainForm').classList.remove('hidden');$('domainList').classList.remove('hidden');
+ }catch(e){status('domainNotice','Mülk silinemedi: '+message(e));buttons.forEach(b=>b.disabled=false);}
 }
 function addDetailRow(parent,label,value){
  const row=document.createElement('div');row.className='detail-row';const k=document.createElement('span'),v=document.createElement('strong');k.textContent=label;v.textContent=value==null?'—':String(value);row.append(k,v);parent.append(row);
@@ -105,9 +121,20 @@ $('authForm').addEventListener('submit',async e=>{
 });
 $('logoutBtn').addEventListener('click',async()=>{await Parse.User.logOut();setPublic();});
 $('domainForm').addEventListener('submit',async e=>{
- e.preventDefault();const b=e.submitter;b.disabled=true;
- try{const d=await api('sentrixCreateDomain',{url:$('domainUrl').value.trim()});$('domainUrl').value='';status('domainNotice','Mülk eklendi. Sana özel doğrulama dosyasını indirip GitHub deposunun .well-known klasörüne yükle.');await loadWorkspace();const saved=domains.find(x=>x.id===d.domainId);if(saved){saved.verification=d.verification;downloadVerification(saved);}}
- catch(err){status('domainNotice','Mülk eklenemedi: '+message(err));}finally{b.disabled=false;}
+ e.preventDefault();
+ const b=e.submitter||$('domainForm').querySelector('button[type="submit"],button:not([type])');
+ const raw=$('domainUrl').value.trim();
+ if(!raw){status('domainNotice','Önce bir alan adı gir.');return;}
+ b.disabled=true;b.textContent='Ekleniyor…';
+ try{
+  const d=await api('sentrixCreateDomain',{url:raw});
+  $('domainUrl').value='';
+  status('domainNotice',d.verified?'Bu alan adı hesabında zaten doğrulanmış.':'Mülk kaydedildi. Sana özel doğrulama dosyası hazırlanıyor…');
+  await loadWorkspace();
+  const saved=domains.find(x=>x.id===d.domainId);
+  if(saved){saved.verification=d.verification||saved.verification;renderDomains();if(!d.verified)downloadVerification(saved);}
+ }catch(err){status('domainNotice','Mülk eklenemedi: '+message(err)+' — Alan adını example.com veya https://example.com biçiminde gir.');}
+ finally{b.disabled=false;b.textContent='Alan adı ekle';}
 });
 $('backToProperties').addEventListener('click',()=>{$('propertyDetail').classList.add('hidden');$('domainForm').classList.remove('hidden');$('domainList').classList.remove('hidden');});
 $('deleteAccountBtn').addEventListener('click',async()=>{
