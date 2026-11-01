@@ -21,24 +21,54 @@ GitHub deposunda `.well-known` klasörü oluşturup dosyayı `.well-known/<dosya
 
 Panelde **Mülklerim** listesinden bir mülke tıklayın. Mülk çalışma alanında sahiplik durumu, son 30 günlük sayfa görüntüleme/ziyaretçi sayıları, alınmış sayfa olayları, güvenlik olayları ve ilişkili varlıklar gösterilir. Tracker henüz eklenmediyse analitik bölümünde veri olmadığı açıkça belirtilir; sahte veri üretilmez.
 
-## 4. Tarayıcı izleme servisi
+## 4. GitHub depo sahipliği doğrulaması
+
+SENTRIX'in GitHub doğrulaması, alan adı doğrulamasından ayrıdır. GitHub deposunun köküne rastgele bir dosya koymak tek başına depo sahibi olduğunu kanıtlamaz; katkıcılar da dosya ekleyebilir. Yeni akış GitHub Device Flow ile kullanıcıyı GitHub'da yetkilendirir ve GitHub API üzerinden giriş yapan hesabın kimliğini, depo sahibini ve depo izinlerini canlı olarak denetler.
+
+### Bir defalık GitHub OAuth yapılandırması
+1. GitHub Developer Settings > OAuth Apps bölümünden SENTRIX için bir OAuth App oluştur.
+2. Application name ve Homepage URL alanlarını doldur. Authorization callback URL, Device Flow kullanıldığı için kullanılmaz.
+3. OAuth App ayarlarında **Enable Device Flow** seçeneğini etkinleştir.
+4. OAuth App'in **Client ID** değerini al.
+5. Back4App > App Settings > Server Settings > Parse Config bölümüne şu anahtarları ekle:
+   - `SENTRIX_GITHUB_CLIENT_ID`: GitHub OAuth App Client ID.
+   - `SENTRIX_GITHUB_TOKEN_ENCRYPTION_KEY`: 64 karakterlik (32 bayt) rastgele hex anahtar. Güvenilir yerel bir ortamda `openssl rand -hex 32` ile üret.
+6. Bu değerleri GitHub'a, `.env` dosyasına veya tarayıcı koduna ekleme. Client ID tek başına gizli değildir; şifreleme anahtarı kesinlikle gizli kalmalıdır.
+7. Güncel `cloud/main.js` dosyasını Back4App Cloud Code'a yükle ve Deploy et.
+
+**İzin kapsamı:** Device Flow şu an `repo` scope ister; bu, özel depolara erişim için gerekir ve GitHub tarafından geniş depo erişim izni olarak tanımlanır. Kullanıcı GitHub onay ekranında izinleri görür ve kendisi onaylar. Yalnızca herkese açık depoları desteklemek istersen kodda `scope:'repo'` yerine `scope:'public_repo'` kullan; bu durumda özel depolar doğrulanamaz.
+
+### Kullanıcı akışı ve doğrulama ölçütü
+1. SENTRIX kullanıcısı hesabına giriş yapar ve **GitHub hesabını bağla** seçeneğini seçer.
+2. SENTRIX tek kullanımlık cihaz kodu üretir. Kullanıcı GitHub'ın resmi cihaz yetkilendirme sayfasında kodu onaylar ve SENTRIX'te yetkilendirmeyi kontrol eder.
+3. Kullanıcı `https://github.com/owner/repository` biçiminde depo adresini girer.
+4. Cloud Code, GitHub API `/user` ve `/repos/{owner}/{repo}` uç noktalarını OAuth token ile sorgular.
+5. Kişisel depoda doğrulama için yetkilendirilmiş GitHub hesabı depo sahibi olmalı ve GitHub API `permissions.admin=true` döndürmelidir. Kuruluş deposunda kuruluşun depo üzerinde admin/yönetici izni aranır.
+6. Yalnızca bu kontroller geçerse SENTRIX doğrulamayı başarılı kaydeder. Yazma/katkıcı (`push`) veya bakım (`maintain`) izni sahiplik doğrulaması değildir.
+7. Başarısız kontrolde kayıt **DOĞRULANMADI** kalır; arayüz nedenini ve tespit edilen izni açıkça gösterir.
+
+OAuth erişim tokenı tarayıcıya geri verilmez. Back4App'teki özel `SxGitHubConnection` sınıfında AES-256-GCM ile şifrelenerek saklanır; şifreleme anahtarı yalnızca Back4App Config'te tutulur. Cihaz kodu SENTRIX hesabına hash ile bağlanır ve süresi dolduğunda/başarıyla kullanıldığında temizlenir. Kullanıcı bağlantıyı keserse saklanan GitHub tokenı ve depo doğrulama kayıtları silinir.
+
+**Doğrulamanın anlamı:** Kişisel depoda GitHub hesabının depo sahibi olduğu; kuruluş deposunda ise bağlanan hesabın depo yöneticisi olduğu doğrulanır. Kuruluş deposu için SENTRIX, kişiyi kuruluşun hukuki sahibi olarak değil, GitHub'daki yönetici yetkisine sahip hesap olarak tanımlar. GitHub OAuth izni iptal edilirse veya depo yetkileri değişirse sonraki canlı doğrulama başarısız olabilir. Kayıtlı sonuç son başarılı denetimin zamanını gösterir; değişen izinleri kendiliğinden izleyen sürekli bir izleme değildir.
+
+## 5. Tarayıcı izleme servisi
 `tracker.js` dosyası GitHub'da yayımlanır. Cloud Code doğrulama sonrası jsDelivr CDN adresini içeren snippet üretir. CDN'nin yeni commit'i sunması kısa süre önbelleğe takılabilir. Test için önce bir alan adını doğrulayın, kodu siteye ekleyin, ardından panelde sayfa görüntülemeyi kontrol edin.
 
 İzleme kodu sayfa yolu, yönlendiren sayfa ve oturum kapsamlı rastgele ziyaretçi kimliği gönderir. Tarayıcı tarafı olaylar manipüle edilebilir; kritik güvenlik telemetrisi olarak değerlendirilmemelidir. KVKK/çerez yükümlülükleri, bilgilendirme ve gerekiyorsa izin yönetimi site sahibinin sorumluluğundadır.
 
-## 5. Google Search Console
+## 6. Google Search Console
 Arama sorguları/performansı için Google Cloud projesi, Search Console API etkinleştirme, OAuth istemcisi, yetkilendirme yönlendirme URI'leri ve kullanıcı bazlı OAuth token saklama akışı gerekir. Bu bilgiler henüz sağlanmadığı için bağlantı etkin değildir; SENTRIX sahte sorgu verisi göstermez.
 
-## 6. WAF / CDN olayları
+## 7. WAF / CDN olayları
 `sentrixIngestSecurityEvent` sunucu taraflı olay alımı içindir. Back4App **Config** bölümüne `SENTRIX_WAF_INGEST_TOKEN` anahtarı ekleyin. Tokenı yalnızca güvenilir WAF webhook aracınızın sunucu tarafında saklayın; tarayıcıya koymayın. Webhook, doğrulanmış siteId ile olay gönderir. WAF sağlayıcısının imza doğrulaması/secret doğrulaması entegrasyon katmanında ayrıca uygulanmalıdır. Bu repo belirli bir WAF sağlayıcısına bağlanmış değildir.
 
-## 7. Logo ve arama motoru yapılandırılmış verisi
+## 8. Logo ve arama motoru yapılandırılmış verisi
 Sitedeki favicon, üst menü logosu ve ana görsel `assets/sentrix-logo.svg` dosyasını kullanır. `index.html` içindeki `SoftwareApplication` JSON-LD aynı logo dosyasını, yayınlandığı sitenin gerçek `location.origin` adresiyle mutlak URL'ye dönüştürerek bildirir. Böylece sabit/yanlış bir Vercel alan adı varsayılmaz. Siteyi yayımladıktan sonra kaynak kodunda JSON-LD'nin üretildiğini ve logo URL'sinin herkese açık açıldığını doğrulayın.
 
-## 8. Hesap silme
+## 9. Hesap silme
 Hesap yönetimi bölümündeki silme düğmesi kullanıcıdan `DELETE MY ACCOUNT` onayı ister. Cloud Function, kullanıcıya ait mülkleri, analitik/güvenlik/audit olaylarını, değerlendirmeleri ve varlık kayıtlarını temizledikten sonra Parse kullanıcısını siler. İşlem geri alınamaz. Back4App deploy edilmeden frontend'deki düğme sunucuda çalışmaz.
 
-## 9. Dağıtım kontrol listesi
+## 10. Dağıtım kontrol listesi
 - [ ] Statik siteyi Vercel veya GitHub Pages üzerinde yayımla.
 - [ ] Yayındaki sayfada SENTRIX SVG logosunun ve JSON-LD yapılandırılmış verisinin aynı SVG dosyasını gösterdiğini doğrula.
 - [ ] Back4App Cloud Code deploy sonrası `sentrixBootstrap` işini çalıştır ve raporda tüm kayıtlı şemaların başarıyla kontrol edildiğini doğrula.
@@ -54,7 +84,7 @@ Hesap yönetimi bölümündeki silme düğmesi kullanıcıdan `DELETE MY ACCOUNT
 
 **Durum:** Frontend ve temel tracker kaynak kodu repodadır; bunların canlı ortamda çalıştığı, Cloud Code deploy edildiği, MongoDB unique index kurulduğu veya Google/WAF entegrasyonlarının etkin olduğu anlamına gelmez. Canlı uçtan uca test ve dış servis yapılandırması tamamlanmadan sistem üretim için hazır kabul edilmemelidir.
 
-## 10. `Invalid function` hatası: Cloud Code dağıtımı
+## 11. `Invalid function` hatası: Cloud Code dağıtımı
 
 `Mülk ekle` sırasında `Invalid function: "sentrixCreateDomain"` görülüyorsa alan adı biçimi hatası değildir. `cloud/main.js` içinde `Parse.Cloud.define('sentrixCreateDomain', ...)` tanımı bulunmalıdır ve aynı dosyanın Back4App uygulamasının **Cloud Code / main.js** alanına yüklenip **Deploy** edilmesi gerekir. Yalnızca GitHub'a commit atmak Back4App Cloud Code'u dağıtmaz. Deploy tamamlandıktan sonra `sentrixHealth` fonksiyonunu çağırarak Cloud Code'un yanıt verdiğini, ardından oturumu açık kullanıcıyla `sentrixCreateDomain` çağrısını test edin. `sentrixHealth` çalışıp `sentrixCreateDomain` hâlâ `Invalid function` veriyorsa Back4App'te dağıtılan dosya güncel değildir veya farklı uygulama/ortam hedeflenmiştir. Master Key'i istemciye eklemeyin.
 
