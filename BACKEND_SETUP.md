@@ -90,3 +90,15 @@ Hesap yönetimi bölümündeki silme düğmesi kullanıcıdan `DELETE MY ACCOUNT
 
 `Mülk ekle` sırasında `Invalid function: "sentrixCreateDomain"` görülüyorsa alan adı biçimi hatası değildir. `cloud/main.js` içinde `Parse.Cloud.define('sentrixCreateDomain', ...)` tanımı bulunmalıdır ve aynı dosyanın Back4App uygulamasının **Cloud Code / main.js** alanına yüklenip **Deploy** edilmesi gerekir. Yalnızca GitHub'a commit atmak Back4App Cloud Code'u dağıtmaz. Deploy tamamlandıktan sonra `sentrixHealth` fonksiyonunu çağırarak Cloud Code'un yanıt verdiğini, ardından oturumu açık kullanıcıyla `sentrixCreateDomain` çağrısını test edin. `sentrixHealth` çalışıp `sentrixCreateDomain` hâlâ `Invalid function` veriyorsa Back4App'te dağıtılan dosya güncel değildir veya farklı uygulama/ortam hedeflenmiştir. Master Key'i istemciye eklemeyin.
 
+
+
+## 12. Advanced analytics and interaction map
+Add `data-sentrix-track="header_cta"` to count clicks on a selected element. Add `data-sentrix-conversion="signup_complete"` to count a conversion. Only explicitly marked elements are counted. Form values, typed text, passwords, keystrokes, DOM snapshots and session replay are not collected. This is an aggregate interaction map, not a coordinate-based visual heatmap.
+
+After deploying updated `cloud/main.js`, run `sentrixBootstrap` once. The property panel reads advanced analytics and offers CSV export.
+
+## 13. Uptime monitoring
+The `sentrixUptimeSweep` Cloud Job checks verified domains and records HTTP status and response latency. Configure a recurring schedule for this job in Back4App (for example every 5 minutes). A GitHub commit does not create the Back4App schedule. Uptime percentages are calculated only from real stored checks.
+
+## 14. External integrations and limits
+Email alerts require a verified mail provider and server-side credentials; they are not reported as active without configuration. AI summaries require an AI provider/key and data-processing configuration. Geographic reporting requires a privacy-reviewed IP geolocation provider. PDF output can be generated through the browser print dialog; CSV export is implemented. Visual session replay is excluded to avoid collecting sensitive page or form contents.
