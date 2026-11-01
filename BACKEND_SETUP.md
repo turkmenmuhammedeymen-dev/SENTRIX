@@ -74,6 +74,8 @@ Hesap yönetimi bölümündeki silme düğmesi kullanıcıdan `DELETE MY ACCOUNT
 - [ ] Back4App Cloud Code deploy sonrası `sentrixBootstrap` işini çalıştır ve raporda tüm kayıtlı şemaların başarıyla kontrol edildiğini doğrula.
 - [ ] Cloud Code'u Back4App'e ayrıca deploy et.
 - [ ] SxDomain.host unique index'i kur.
+- [ ] GitHub OAuth App oluştur, Device Flow'u etkinleştir ve iki gerekli değeri Back4App Parse Config'e ekle.
+- [ ] Güncel Cloud Code'u deploy et; GitHub hesabını bağla, kişisel depo sahibi ve kuruluş admin doğrulamasını dene; yalnızca push yetkisi olan bir hesapla doğrulamanın reddedildiğini kontrol et.
 - [ ] Yeni kullanıcıyla kayıt ve giriş dene.
 - [ ] Her test mülkü için indirilen benzersiz doğrulama dosyasını `.well-known/` içine koy, yayımla ve doğrula.
 - [ ] Mülklerim listesinden mülk detay ekranını aç; gerçek tracker ve olay verilerini kontrol et.
