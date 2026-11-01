@@ -102,3 +102,27 @@ The `sentrixUptimeSweep` Cloud Job checks verified domains and records HTTP stat
 
 ## 14. External integrations and limits
 Email alerts require a verified mail provider and server-side credentials; they are not reported as active without configuration. AI summaries require an AI provider/key and data-processing configuration. Geographic reporting requires a privacy-reviewed IP geolocation provider. PDF output can be generated through the browser print dialog; CSV export is implemented. Visual session replay is excluded to avoid collecting sensitive page or form contents.
+
+
+## 15. Config ile etkinleşen modüller
+Back4App > App Settings > Server Settings > Parse Config alanına ekle:
+- SENTRIX_APPS_SCRIPT_URL — Google Apps Script Web App /exec URL
+- SENTRIX_APPS_SCRIPT_TOKEN — rastgele 40+ karakterlik token
+- SENTRIX_ALERT_EMAIL — uyarı alıcısı e-posta adresi
+- SENTRIX_AI_API_KEY — OpenAI uyumlu sağlayıcı anahtarı
+- SENTRIX_AI_MODEL — sağlayıcının tam model kimliği
+- SENTRIX_AI_BASE_URL — isteğe bağlı; varsayılan https://api.openai.com/v1
+- SENTRIX_GEOIP_TOKEN — ipinfo.io tokenı
+- SENTRIX_SECURITY_SPIKE_THRESHOLD — isteğe bağlı, varsayılan 120 istek/dakika
+- SENTRIX_WAF_INGEST_TOKEN — isteğe bağlı WAF webhook tokenı
+
+### E-posta kurulumu
+Google Apps Script'te integrations/mail-apps-script.gs dosyasını yapıştır. Project Settings > Script Properties alanına SENTRIX_APPS_SCRIPT_TOKEN ekle. Deploy > New deployment > Web app, Execute as Me, erişim Anyone seç. Oluşan /exec URL ve aynı tokenı Back4App Config'e gir. SENTRIX_ALERT_EMAIL alıcısını ekle ve panelden test e-postası gönder.
+
+### AI ve coğrafya
+AI için SENTRIX_AI_API_KEY ve SENTRIX_AI_MODEL zorunlu; özel OpenAI-compatible sağlayıcıda SENTRIX_AI_BASE_URL de gir. GeoIP için ipinfo.io tokenını SENTRIX_GEOIP_TOKEN'a gir. IP adresi saklanmaz; yaklaşık şehir/ülke koordinatı kaydedilir.
+
+### Isı haritası ve yolculuk
+İzlenecek site öğesine data-sentrix-heatmap="hero", adım sayılacak kontrole data-sentrix-journey="pricing_opened" ekle. Form içeriği, tuş vuruşu, DOM görüntüsü veya video oturum kaydı alınmaz.
+
+PDF, tarayıcının Yazdır > PDF olarak kaydet işlevini kullanır. Uptime için Back4App Cloud Jobs içinde sentrixUptimeSweep işini 5 dakikada bir zamanla. Trafik anomali algılama eşik tabanlı uyarıdır, saldırı kanıtı değildir.
