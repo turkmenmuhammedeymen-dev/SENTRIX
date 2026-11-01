@@ -103,9 +103,22 @@ async function openProperty(id){
 }
 function showSnippet(d){
  const code=d.snippet||'';
- if(!code){status('domainNotice','İzleme kodu alınamadı.');return;}
- const box=document.createElement('div');box.className='snippet-box';const p=document.createElement('p');p.textContent='Bu kodu mülkünün sayfalarında kapanış body etiketinden önce kullan:';const pre=document.createElement('pre');pre.textContent=code;
- const b=makeButton('Kodu kopyala','primary',async()=>{try{await navigator.clipboard.writeText(code);b.textContent='Kopyalandı';}catch(e){b.textContent='Kopyalama başarısız';}});box.append(p,pre,b);$('propertyDetailContent').prepend(box);
+ if(!code){status('domainNotice','İzleme kodu henüz alınamadı. Mülk ayrıntılarını yenileyip tekrar dene.');return;}
+ const root=$('propertyDetailContent');
+ const previous=root.querySelector('.snippet-box');if(previous)previous.remove();
+ const box=document.createElement('div');box.className='snippet-box card';
+ const title=document.createElement('h3');title.textContent='SENTRIX izleme kodu';
+ const p=document.createElement('p');p.textContent='Aşağıdaki kodu, doğrulanmış mülkünün tüm sayfalarında kapanış </body> etiketinden hemen önce ekle. Yayınladıktan sonra siteyi ziyaret ederek veri akışını başlat.';
+ const pre=document.createElement('pre');pre.textContent=code;
+ const b=makeButton('Kodu kopyala','primary',async()=>{
+  try{
+   if(navigator.clipboard&&window.isSecureContext)await navigator.clipboard.writeText(code);
+   else {const ta=document.createElement('textarea');ta.value=code;ta.setAttribute('readonly','');ta.style.position='absolute';ta.style.left='-9999px';document.body.append(ta);ta.select();const ok=document.execCommand('copy');ta.remove();if(!ok)throw new Error('COPY_FAILED');}
+   b.textContent='Kopyalandı';
+  }catch(e){b.textContent='Kopyalama başarısız';}
+ });
+ const close=makeButton('Kapat','',()=>box.remove());
+ box.append(title,p,pre,b,close);root.prepend(box);box.scrollIntoView({behavior:'smooth',block:'center'});
 }
 
 let githubDeviceCode=null;
