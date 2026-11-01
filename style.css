@@ -6,3 +6,16 @@
 
 /* Domain management actions */
 .domain-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.domain-actions .btn{font-size:13px;padding:10px 13px}.btn.danger{background:#522334;border-color:#a84b68;color:#ffeaf0}.btn.danger:hover{background:#713047;border-color:#e27a98}.domain-card{gap:20px}.domain-card>div:first-child{min-width:0}.domain-card strong{overflow-wrap:anywhere}@media(max-width:760px){.domain-actions{width:100%;display:grid;grid-template-columns:1fr}.domain-actions .btn{width:100%}}
+
+
+/* GitHub ownership verification workspace */
+.github-ownership{border-top:1px solid var(--line);margin-top:18px}
+.github-connect{display:flex;align-items:center;justify-content:space-between;gap:18px;margin:18px 0}
+.github-connect strong{font-size:18px}
+.github-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.github-code{margin:14px 0;padding:18px;border:1px dashed var(--cyan);border-radius:14px;background:#06111f;color:var(--cyan);font:800 clamp(25px,5vw,38px)/1.2 ui-monospace,monospace;letter-spacing:.16em;text-align:center}
+#githubDevicePanel{margin:14px 0}
+#githubDevicePanel p{color:var(--muted)}
+#githubRepoForm{margin-top:22px}
+#githubRepoList .domain-card{align-items:center}
+@media(max-width:760px){.github-connect{align-items:flex-start;flex-direction:column}.github-actions{width:100%}.github-actions .btn,.github-actions a{flex:1;text-align:center}.github-code{letter-spacing:.1em}}
