@@ -231,7 +231,8 @@ $('domainForm').addEventListener('submit',async e=>{
  }catch(err){const detail=message(err);const missingFunction=/invalid function|function[^.]*not found|could not find function/i.test(detail);status('domainNotice',missingFunction?'Sunucu yapılandırması eksik: sentrixCreateDomain Cloud Code fonksiyonu Back4App üzerinde etkin değil. GitHub deposundaki cloud/main.js dosyasını Back4App Cloud Code alanına yükleyip Deploy et. GitHub commit işlemi Back4App dağıtımını otomatik yapmaz. Alan adı verin kaybolmadı; tekrar denemeden önce dağıtımı tamamla.':'Mülk eklenemedi: '+detail+' — Alan adını example.com veya https://example.com biçiminde gir.');}
  finally{b.disabled=false;b.textContent='Alan adı ekle';}
 });
-$('backToProperties').addEventListener('click',()=>{$('propertyDetail').classList.add('hidden');$('domainForm').classList.remove('hidden');$('domainList').classList.remove('hidden');});
+$('backToProperties').addEventListener('click',()=>{history.replaceState({},'',location.pathname+location.search);setPropertyPage(false);});
+window.addEventListener('popstate',()=>{const route=location.hash.match(/^#property\/(.+)$/);if(route&&currentUser){openProperty(decodeURIComponent(route[1]),false);}else if(currentUser){setPropertyPage(false);}});
 $('deleteAccountBtn').addEventListener('click',async()=>{
  const confirmation=window.prompt('Hesabın, mülklerin ve ilişkili verilerin kalıcı olarak silinecek. Devam etmek için DELETE MY ACCOUNT yaz:');
  if(confirmation!=='DELETE MY ACCOUNT'){status('accountNotice','Hesap silme işlemi iptal edildi.');return;}
