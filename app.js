@@ -133,7 +133,7 @@ $('domainForm').addEventListener('submit',async e=>{
   await loadWorkspace();
   const saved=domains.find(x=>x.id===d.domainId);
   if(saved){saved.verification=d.verification||saved.verification;renderDomains();if(!d.verified)downloadVerification(saved);}
- }catch(err){status('domainNotice','Mülk eklenemedi: '+message(err)+' — Alan adını example.com veya https://example.com biçiminde gir.');}
+ }catch(err){const detail=message(err);const missingFunction=/invalid function|function[^.]*not found|could not find function/i.test(detail);status('domainNotice',missingFunction?'Sunucu yapılandırması eksik: sentrixCreateDomain Cloud Code fonksiyonu Back4App üzerinde etkin değil. GitHub deposundaki cloud/main.js dosyasını Back4App Cloud Code alanına yükleyip Deploy et. GitHub commit işlemi Back4App dağıtımını otomatik yapmaz. Alan adı verin kaybolmadı; tekrar denemeden önce dağıtımı tamamla.':'Mülk eklenemedi: '+detail+' — Alan adını example.com veya https://example.com biçiminde gir.');}
  finally{b.disabled=false;b.textContent='Alan adı ekle';}
 });
 $('backToProperties').addEventListener('click',()=>{$('propertyDetail').classList.add('hidden');$('domainForm').classList.remove('hidden');$('domainList').classList.remove('hidden');});
