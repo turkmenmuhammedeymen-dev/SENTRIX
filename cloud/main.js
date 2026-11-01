@@ -467,4 +467,4 @@ Parse.Cloud.define('sentrixGitHubDisconnect',async r=>{
   return {disconnected:true};
 });
 
-['SxDomain','SxAuditEvent','SxPageEvent','SxSecurityEvent','SxAssessment','SxAsset'].forEach(c=>Parse.Cloud.beforeSave(c,r=>{if(!r.master)throw new Error('SERVER_WRITE_ONLY');}));
+['SxDomain','SxAuditEvent','SxPageEvent','SxSecurityEvent','SxAssessment','SxAsset','SxGitHubDeviceRequest','SxGitHubConnection','SxGitHubRepo'].forEach(c=>Parse.Cloud.beforeSave(c,r=>{if(!r.master)throw new Error('SERVER_WRITE_ONLY');}));
