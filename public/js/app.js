@@ -116,6 +116,24 @@ async function openProperty(id,updateRoute=true){
   if(!(data.tracker&&data.tracker.active))tracking.append(makeButton('İzleme kodunu göster','primary',()=>showSnippet(d)));
   tracking.append(makeButton('Durumu yeniden kontrol et','',()=>openProperty(id)));
   panel.prepend(tracking);
+
+  try {
+   const advanced=await api('sentrixGetAdvancedAnalytics',{domainId:id});
+   const section=document.createElement('section');section.className='detail-section';
+   const title=document.createElement('h3');title.textContent='Gelişmiş analitik · Son 30 gün';section.append(title);
+   const metrics=document.createElement('div');metrics.className='property-stats';
+   [['Tıklama',advanced.interactions.clicks],['Dönüşüm',advanced.interactions.conversions],['Performans örneği',advanced.performance.samples],['Ortalama yüklenme',advanced.performance.avgLoadMs==null?'Veri yok':advanced.performance.avgLoadMs+' ms'],['Ortalama LCP',advanced.performance.avgLcpMs==null?'Veri yok':advanced.performance.avgLcpMs+' ms'],['Uptime',advanced.uptime.availability==null?'Henüz ölçülmedi':advanced.uptime.availability+'%']].forEach(([label,value])=>{const card=document.createElement('article');card.className='stat';const l=document.createElement('span'),v=document.createElement('strong');l.textContent=label;v.textContent=String(value);card.append(l,v);metrics.append(card);});section.append(metrics);
+   const note=document.createElement('p');note.className='notice';note.textContent='Yalnızca data-sentrix-track ve data-sentrix-conversion ile açıkça işaretlenen öğelerin anonim toplu etkileşim sayımları alınır. Form verisi, tuş vuruşu veya oturum kaydı tutulmaz.';section.append(note);
+   const targets=document.createElement('div');targets.className='detail-section';const th=document.createElement('h4');th.textContent='En çok etkileşim alan öğeler';targets.append(th);
+   if(!advanced.interactions.topTargets.length){const empty=document.createElement('p');empty.textContent='Henüz etkileşim verisi yok. İzlenecek öğelere data-sentrix-track ekle.';targets.append(empty);}
+   advanced.interactions.topTargets.forEach(x=>{const row=document.createElement('div');row.className='detail-row';row.textContent=x.target+' · '+x.count+' tıklama';targets.append(row);});section.append(targets);
+   const up=document.createElement('p');up.className='notice';up.textContent=advanced.uptime.last?'Son uptime kontrolü: '+advanced.uptime.last.status.toUpperCase()+' · '+advanced.uptime.last.latencyMs+' ms · '+new Date(advanced.uptime.last.checkedAt).toLocaleString('tr-TR'):'Uptime henüz ölçülmedi. Back4App panelinde sentrixUptimeSweep Cloud Job zamanlaması gerekir.';section.append(up);
+   const exportBtn=makeButton('CSV raporunu indir','primary',()=>{const rows=[['metric','value'],['clicks',advanced.interactions.clicks],['conversions',advanced.interactions.conversions],['performance_samples',advanced.performance.samples],['avg_load_ms',advanced.performance.avgLoadMs??''],['avg_lcp_ms',advanced.performance.avgLcpMs??''],['uptime_percent',advanced.uptime.availability??''],...advanced.interactions.topTargets.map(x=>['click_target:'+x.target,x.count])];const csv=rows.map(row=>row.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\r\n');const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='sentrix-'+d.host+'-report.csv';link.click();URL.revokeObjectURL(url);});
+   section.append(exportBtn);panel.append(section);
+  } catch(advancedError) {
+   const warn=document.createElement('p');warn.className='notice';warn.textContent='Gelişmiş analitik şu an kullanılamıyor: '+message(advancedError)+'. Cloud Code güncellemesi ve şema kurulumu gerekli.';panel.append(warn);
+  }
+
  }catch(e){panel.textContent='Mülk verileri yüklenemedi: '+message(e);}
 }
 function showSnippet(d){
