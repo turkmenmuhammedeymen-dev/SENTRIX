@@ -27,7 +27,7 @@ SENTRIX'in GitHub doğrulaması, alan adı doğrulamasından ayrıdır. GitHub d
 
 ### Bir defalık GitHub OAuth yapılandırması
 1. GitHub Developer Settings > OAuth Apps bölümünden SENTRIX için bir OAuth App oluştur.
-2. Application name ve Homepage URL alanlarını doldur. Authorization callback URL, Device Flow kullanıldığı için kullanılmaz.
+2. Application name ve Homepage URL alanlarını doldur. GitHub formu Authorization callback URL isterse SENTRIX'in ana adresini yaz; Device Flow bu callback adresine yönlendirme yapmaz.
 3. OAuth App ayarlarında **Enable Device Flow** seçeneğini etkinleştir.
 4. OAuth App'in **Client ID** değerini al.
 5. Back4App > App Settings > Server Settings > Parse Config bölümüne şu anahtarları ekle:
@@ -47,7 +47,7 @@ SENTRIX'in GitHub doğrulaması, alan adı doğrulamasından ayrıdır. GitHub d
 6. Yalnızca bu kontroller geçerse SENTRIX doğrulamayı başarılı kaydeder. Yazma/katkıcı (`push`) veya bakım (`maintain`) izni sahiplik doğrulaması değildir.
 7. Başarısız kontrolde kayıt **DOĞRULANMADI** kalır; arayüz nedenini ve tespit edilen izni açıkça gösterir.
 
-OAuth erişim tokenı tarayıcıya geri verilmez. Back4App'teki özel `SxGitHubConnection` sınıfında AES-256-GCM ile şifrelenerek saklanır; şifreleme anahtarı yalnızca Back4App Config'te tutulur. Cihaz kodu SENTRIX hesabına hash ile bağlanır ve süresi dolduğunda/başarıyla kullanıldığında temizlenir. Kullanıcı bağlantıyı keserse saklanan GitHub tokenı ve depo doğrulama kayıtları silinir.
+OAuth erişim tokenı tarayıcıya geri verilmez. Back4App'teki özel `SxGitHubConnection` sınıfında AES-256-GCM ile şifrelenerek saklanır; şifreleme anahtarı yalnızca Back4App Config'te tutulur. Cihaz kodu SENTRIX hesabına hash ile bağlanır ve süresi dolduğunda/başarıyla kullanıldığında temizlenir. Kullanıcı bağlantıyı keserse saklanan GitHub tokenı ve depo doğrulama kayıtları SENTRIX'ten silinir. GitHub tarafındaki OAuth izni otomatik iptal edilmez; tamamen kaldırmak için GitHub > Settings > Applications > Authorized OAuth Apps bölümünden SENTRIX iznini ayrıca iptal et.
 
 **Doğrulamanın anlamı:** Kişisel depoda GitHub hesabının depo sahibi olduğu; kuruluş deposunda ise bağlanan hesabın depo yöneticisi olduğu doğrulanır. Kuruluş deposu için SENTRIX, kişiyi kuruluşun hukuki sahibi olarak değil, GitHub'daki yönetici yetkisine sahip hesap olarak tanımlar. GitHub OAuth izni iptal edilirse veya depo yetkileri değişirse sonraki canlı doğrulama başarısız olabilir. Kayıtlı sonuç son başarılı denetimin zamanını gösterir; değişen izinleri kendiliğinden izleyen sürekli bir izleme değildir.
 
