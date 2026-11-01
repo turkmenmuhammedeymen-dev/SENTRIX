@@ -7,6 +7,26 @@
 <section class="section" id="principles"><div class="eyebrow">Responsible by design</div><h2>Önce yetki. Sonra görünürlük.</h2><p class="lead">SENTRIX yalnızca sahip olduğun veya açıkça yönetme iznin bulunan varlıklar içindir. Doğrulama olmadan izleme başlatılmaz; eksik entegrasyonlar gerçek veri gibi gösterilmez.</p></section></main>
 <main id="dashboard" class="wrap hidden"><section class="dash-head"><div><div class="eyebrow">SECURE WORKSPACE</div><h1>Kontrol paneli</h1><p class="lead" id="welcomeText">Hesabın ve doğrulanmış varlıkların.</p></div><button class="btn" id="logoutBtn">Oturumu kapat</button></section>
 <section class="stats"><article class="stat"><span>Sayfa görüntüleme</span><strong id="statViews">—</strong><small>Son 30 gün</small></article><article class="stat"><span>Tekil ziyaretçi</span><strong id="statSessions">—</strong><small>Son 30 gün</small></article><article class="stat"><span>Güvenlik olayları</span><strong id="statSecurity">—</strong><small>Bağlı kaynaklardan</small></article></section>
+<section class="section github-ownership">
+<div class="eyebrow">GITHUB OWNERSHIP VERIFICATION</div><h2>GitHub depo mülkiyeti</h2>
+<p class="lead">GitHub hesabını güvenli biçimde bağla. SENTRIX, GitHub API üzerinden seçtiğin depoda kişisel sahiplik veya kuruluş yöneticiliği yetkisini kontrol eder. Dosyanın depoda bulunması tek başına sahiplik kanıtı sayılmaz.</p>
+<div class="github-connect card">
+<div><strong id="githubConnectionTitle">GitHub hesabı bağlı değil</strong><p id="githubConnectionText" class="notice">Depo doğrulaması için GitHub yetkilendirmesi gerekir.</p></div>
+<div class="github-actions"><button class="btn primary" id="githubConnectBtn" type="button">GitHub hesabını bağla</button><button class="btn danger hidden" id="githubDisconnectBtn" type="button">Bağlantıyı kes</button></div>
+</div>
+<div id="githubDevicePanel" class="card hidden">
+<p>GitHub'ın resmi yetkilendirme sayfasını aç ve aşağıdaki tek kullanımlık kodu gir.</p>
+<div class="github-code" id="githubUserCode">—</div>
+<div class="github-actions"><a class="btn primary" id="githubVerifyLink" href="https://github.com/login/device" target="_blank" rel="noopener noreferrer">GitHub'da yetkilendir</a><button class="btn" id="githubPollBtn" type="button">Yetkilendirmeyi kontrol et</button></div>
+<p class="notice" id="githubDeviceNotice" role="status">Kod sınırlı süre geçerlidir. Yetkilendirmeyi tamamladıktan sonra kontrol et.</p>
+</div>
+<form id="githubRepoForm" class="scan">
+<input id="githubRepoUrl" type="url" inputmode="url" placeholder="https://github.com/kullanici/depo" autocomplete="url" maxlength="500" required>
+<button class="btn primary" id="githubRepoVerifyBtn" type="submit">Depoyu doğrula</button>
+</form>
+<p class="notice" id="githubRepoNotice" role="status">Doğrulama, bağlı GitHub hesabının gerçek depo izinlerini kontrol eder. Kişisel depoda sahip, kuruluş deposunda yönetici yetkisi aranır.</p>
+<div id="githubRepoList" class="domain-list"></div>
+</section>
 <section class="section"><div class="section-head"><div><div class="eyebrow">ASSET MANAGEMENT</div><h2>Alan adların</h2></div></section>
 <form id="domainForm" class="scan"><input id="domainUrl" type="text" inputmode="url" autocomplete="url" placeholder="ornek.com veya https://ornek.com" maxlength="2048" required><button class="btn primary" type="submit">Alan adı ekle</button></form><p class="notice" id="domainNotice" role="status">Yalnızca yönetme yetkin olan alan adlarını ekle.</p><div id="domainList" class="domain-list"></div></section>
 <section id="propertyDetail" class="section hidden"><button class="btn" id="backToProperties">← Mülklerime dön</button><div id="propertyDetailContent"></div></section>
