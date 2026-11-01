@@ -26,6 +26,7 @@ async function loadWorkspace(){
  $('statSessions').textContent=Number(d.sessions||0).toLocaleString('tr-TR');
  $('statSecurity').textContent=Number(d.securityEvents||0).toLocaleString('tr-TR');
  }catch(e){status('domainNotice','Panel verileri alınamadı: '+message(e));}
+ try{await refreshGitHubState();}catch(e){status('githubRepoNotice','GitHub doğrulama servisi şu an kullanılamıyor: '+message(e));}
 }
 function makeButton(label,cls,fn){const b=document.createElement('button');b.className='btn '+(cls||'');b.textContent=label;b.addEventListener('click',fn);return b;}
 function renderDomains(){
@@ -106,6 +107,71 @@ function showSnippet(d){
  const box=document.createElement('div');box.className='snippet-box';const p=document.createElement('p');p.textContent='Bu kodu mülkünün sayfalarında kapanış body etiketinden önce kullan:';const pre=document.createElement('pre');pre.textContent=code;
  const b=makeButton('Kodu kopyala','primary',async()=>{try{await navigator.clipboard.writeText(code);b.textContent='Kopyalandı';}catch(e){b.textContent='Kopyalama başarısız';}});box.append(p,pre,b);$('propertyDetailContent').prepend(box);
 }
+
+let githubDeviceCode=null;
+function renderGitHubRepositories(items){
+ const root=$('githubRepoList');if(!root)return;root.replaceChildren();
+ if(!items||!items.length){root.textContent='Henüz doğrulanmış GitHub deposu yok.';return;}
+ items.forEach(item=>{
+  const card=document.createElement('article');card.className='domain-card';
+  const left=document.createElement('div'),name=document.createElement('strong'),meta=document.createElement('p'),badge=document.createElement('span');
+  name.textContent=item.repository;meta.textContent='GitHub hesabı: '+item.githubLogin+' · Yetki: '+(item.permission||'—');
+  badge.className='state '+(item.verified?'good':'pending');
+  badge.textContent=item.verified?(item.verificationType==='PERSONAL_REPOSITORY_OWNER'?'Depo sahibi doğrulandı':'Kuruluş yöneticisi doğrulandı'):'Doğrulanmadı';
+  left.append(name,meta,badge);card.append(left);
+  if(item.repositoryUrl){const a=document.createElement('a');a.className='btn';a.href=item.repositoryUrl;a.target='_blank';a.rel='noopener noreferrer';a.textContent='GitHub deposunu aç';card.append(a);}
+  root.append(card);
+ });
+}
+async function refreshGitHubState(){
+ const state=await api('sentrixGitHubConnectionStatus');
+ const title=$('githubConnectionTitle'),detail=$('githubConnectionText'),connect=$('githubConnectBtn'),disconnect=$('githubDisconnectBtn');
+ if(state.connected){title.textContent='GitHub hesabı bağlı: @'+state.login;detail.textContent='GitHub hesabı SENTRIX ile yetkilendirildi. Depolar için canlı API denetimi yapılabilir.';connect.classList.add('hidden');disconnect.classList.remove('hidden');}
+ else{title.textContent='GitHub hesabı bağlı değil';detail.textContent='Depo mülkiyeti doğrulamak için GitHub hesabını bağla.';connect.classList.remove('hidden');disconnect.classList.add('hidden');}
+ const repos=await api('sentrixGitHubListRepositories');renderGitHubRepositories(repos);
+}
+async function startGitHubDeviceFlow(){
+ const b=$('githubConnectBtn');b.disabled=true;b.textContent='Bağlantı hazırlanıyor…';
+ try{
+  const r=await api('sentrixGitHubDeviceStart');githubDeviceCode=r.deviceCode;
+  $('githubUserCode').textContent=r.userCode;$('githubDevicePanel').classList.remove('hidden');
+  $('githubDeviceNotice').textContent='Kod '+Math.ceil(r.expiresIn/60)+' dakika geçerli. GitHub sayfasında kodu onayla, sonra SENTRIX’e dönüp kontrol et.';
+  window.open(r.verificationUri,'_blank','noopener,noreferrer');
+ }catch(e){status('githubRepoNotice','GitHub bağlantısı başlatılamadı: '+message(e));}
+ finally{b.disabled=false;b.textContent='GitHub hesabını bağla';}
+}
+async function pollGitHubDeviceFlow(){
+ if(!githubDeviceCode){status('githubDeviceNotice','Önce GitHub bağlantısını başlat.');return;}
+ const b=$('githubPollBtn');b.disabled=true;b.textContent='Kontrol ediliyor…';
+ try{
+  const r=await api('sentrixGitHubDevicePoll',{deviceCode:githubDeviceCode});
+  if(r.pending){status('githubDeviceNotice','GitHub onayı henüz tamamlanmadı. GitHub sayfasındaki adımı bitirip tekrar kontrol et.');return;}
+  if(!r.connected){githubDeviceCode=null;status('githubDeviceNotice',r.reason==='GITHUB_ACCESS_DENIED'?'GitHub erişim izni verilmedi. Yeniden bağlanabilirsin.':'Yetkilendirme kodunun süresi doldu. Yeniden başlat.');return;}
+  githubDeviceCode=null;$('githubDevicePanel').classList.add('hidden');
+  status('githubRepoNotice','GitHub hesabı başarıyla bağlandı: @'+r.login+'. Şimdi depo adresini girip doğrulayabilirsin.');
+  await refreshGitHubState();
+ }catch(e){status('githubDeviceNotice','Yetkilendirme kontrol edilemedi: '+message(e));}
+ finally{b.disabled=false;b.textContent='Yetkilendirmeyi kontrol et';}
+}
+async function verifyGitHubRepository(e){
+ e.preventDefault();const b=$('githubRepoVerifyBtn'),url=$('githubRepoUrl').value.trim();
+ if(!url)return;b.disabled=true;b.textContent='GitHub API denetleniyor…';
+ status('githubRepoNotice','GitHub hesabı ve depo izinleri canlı API üzerinden kontrol ediliyor. Henüz doğrulanmadı.');
+ try{
+  const r=await api('sentrixGitHubVerifyRepository',{repositoryUrl:url});
+  if(!r.verified){
+   const why=r.reason==='ADMIN_PERMISSION_REQUIRED'?'Bağlı hesapta depo sahibi/yönetici (admin) yetkisi bulunamadı. Yazma veya katkıcı erişimi sahiplik sayılmaz.':'Depo sahibi ile yetkilendirilmiş GitHub hesabı eşleşmiyor.';
+   status('githubRepoNotice','DOĞRULANMADI — '+why+' Depo: '+(r.repository||url)+' · Hesap: @'+r.githubLogin+' · Yetki: '+r.permission);
+  }else{
+   const label=r.verificationType==='PERSONAL_REPOSITORY_OWNER'?'Kişisel depo sahibi':'Kuruluş deposu yöneticisi';
+   status('githubRepoNotice','DOĞRULANDI — '+label+' yetkisi GitHub API ile doğrulandı. Depo: '+r.repository+' · Hesap: @'+r.githubLogin);
+   $('githubRepoUrl').value='';
+  }
+  await refreshGitHubState();
+ }catch(err){status('githubRepoNotice','DOĞRULANMADI — GitHub doğrulaması tamamlanamadı: '+message(err));}
+ finally{b.disabled=false;b.textContent='Depoyu doğrula';}
+}
+
 if(!window.Parse||!cfg){status('authMessage','Back4App istemci yapılandırması bulunamadı.');return;}
 Parse.initialize(cfg.applicationId,cfg.javascriptKey);Parse.serverURL=cfg.serverURL;
 document.querySelectorAll('[data-open-auth]').forEach(b=>b.addEventListener('click',()=>openAuth(b.dataset.openAuth)));
@@ -146,5 +212,15 @@ $('deleteAccountBtn').addEventListener('click',async()=>{
  finally{b.disabled=false;b.textContent='Hesabımı sil';}
 });
 $('year').textContent=new Date().getFullYear();
+$('githubConnectBtn').addEventListener('click',startGitHubDeviceFlow);
+$('githubPollBtn').addEventListener('click',pollGitHubDeviceFlow);
+$('githubRepoForm').addEventListener('submit',verifyGitHubRepository);
+$('githubDisconnectBtn').addEventListener('click',async()=>{
+ const b=$('githubDisconnectBtn');b.disabled=true;
+ try{await api('sentrixGitHubDisconnect');githubDeviceCode=null;$('githubDevicePanel').classList.add('hidden');status('githubRepoNotice','GitHub bağlantısı kesildi ve doğrulama kayıtları kaldırıldı.');await refreshGitHubState();}
+ catch(e){status('githubRepoNotice','Bağlantı kesilemedi: '+message(e));}
+ finally{b.disabled=false;}
+});
+
 const current=Parse.User.current();if(current)setAuthenticated(current);else setPublic();
 })();
