@@ -57,6 +57,10 @@ function sendAttempt(payload,attempt){
     if(attempt<3)setTimeout(function(){sendAttempt(payload,attempt+1);},1500*attempt);
   });
 }
+function sendExtra(name,payload){fetch('https://parseapi.back4app.com/functions/'+name,{method:'POST',mode:'cors',cache:'no-store',headers:{'Content-Type':'application/json','X-Parse-Application-Id':appId,'X-Parse-Javascript-Key':jsKey},body:JSON.stringify(payload),credentials:'omit',keepalive:true}).then(function(r){if(!r.ok)report(name+' rejected: HTTP_'+r.status);}).catch(function(e){report(name+' network error',e);});}
+function sendInteraction(kind,target){sendExtra('sentrixTrackInteraction',{siteId:siteId,host:location.hostname.toLowerCase(),kind:kind,target:String(target||'').slice(0,120),path:location.pathname.slice(0,300),visitorId:visitor()});}
+function capturePerformance(){try{var nav=performance.getEntriesByType('navigation')[0];if(!nav)return;var lcp=0;try{var entries=performance.getEntriesByType('largest-contentful-paint');if(entries.length)lcp=entries[entries.length-1].startTime;}catch(_){}sendExtra('sentrixTrackPerformance',{siteId:siteId,host:location.hostname.toLowerCase(),path:location.pathname.slice(0,300),loadMs:Math.round(nav.loadEventEnd||nav.duration||0),domReadyMs:Math.round(nav.domContentLoadedEventEnd||0),lcpMs:Math.round(lcp),cls:0,deviceType:/mobile|android|iphone/i.test(navigator.userAgent)?'mobile':'desktop'});}catch(e){report('Performance metrics unavailable',e);}}
+document.addEventListener('click',function(event){var node=event.target&&event.target.closest?event.target.closest('[data-sentrix-track],[data-sentrix-conversion]'):null;if(!node)return;if(node.hasAttribute('data-sentrix-conversion'))sendInteraction('conversion',node.getAttribute('data-sentrix-conversion'));else sendInteraction('click',node.getAttribute('data-sentrix-track'));},{capture:true,passive:true});
 function send(){
   var payload={
     siteId:siteId,
@@ -67,6 +71,6 @@ function send(){
   };
   sendAttempt(payload,1);
 }
-if(document.readyState==='complete'||document.readyState==='interactive')send();
-else document.addEventListener('DOMContentLoaded',send,{once:true});
+if(document.readyState==='complete'||document.readyState==='interactive'){send();setTimeout(capturePerformance,1200);}
+else document.addEventListener('DOMContentLoaded',function(){send();window.addEventListener('load',function(){setTimeout(capturePerformance,1200);},{once:true});},{once:true});
 })();
