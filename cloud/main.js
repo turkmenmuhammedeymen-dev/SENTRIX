@@ -40,6 +40,11 @@ const SENTRIX_FEATURE_REGISTRY = {
   },
   githubOwnership: {
     classes: {
+      SxGitHubDeviceRequest: {
+        fields: { owner:{type:'Pointer',targetClass:'_User'}, deviceCodeHash:{type:'String'}, expiresAt:{type:'Date'} },
+        indexes: { owner:{'_p_owner':1}, codeHash:{deviceCodeHash:1} },
+        access:'cloud-only'
+      },
       SxGitHubConnection: {
         fields: {
           owner:{type:'Pointer',targetClass:'_User'}, githubId:{type:'String'}, login:{type:'String'},
@@ -339,8 +344,8 @@ Parse.Cloud.define('sentrixCreateAssessmentRequest',async r=>{await sentrixBoots
  * SENTRIX_GITHUB_TOKEN_ENCRYPTION_KEY (64 hex characters; random 32-byte key)
  * OAuth tokens are encrypted before persistence and never returned to clients.
  */
-function githubConfig() {
-  const cfg = Parse.Config.current();
+async function githubConfig() {
+  const cfg = await Parse.Config.get();
   const clientId = cfg && cfg.get('SENTRIX_GITHUB_CLIENT_ID');
   const keyHex = cfg && cfg.get('SENTRIX_GITHUB_TOKEN_ENCRYPTION_KEY');
   if (typeof clientId !== 'string' || !clientId.trim()) throw new Error('GITHUB_OAUTH_NOT_CONFIGURED');
@@ -376,22 +381,29 @@ async function githubConnectionFor(u) {
   return q.first({useMasterKey:true});
 }
 Parse.Cloud.define('sentrixGitHubDeviceStart',async r=>{
-  const u=user(r),cfg=githubConfig();
+  const u=user(r),cfg=await githubConfig();
   const body=new URLSearchParams({client_id:cfg.clientId,scope:'repo'}).toString();
   const response=await fetch('https://github.com/login/device/code',{method:'POST',headers:{Accept:'application/json','Content-Type':'application/x-www-form-urlencoded'},body,signal:AbortSignal.timeout(15000)});
   const data=await response.json();
   if(!response.ok||!data.device_code||!data.user_code||!data.verification_uri) throw new Error('GITHUB_DEVICE_FLOW_START_FAILED');
+  const pending=obj('SxGitHubDeviceRequest',{owner:u,deviceCodeHash:crypto.createHash('sha256').update(data.device_code).digest('hex'),expiresAt:new Date(Date.now()+(Number(data.expires_in)||900)*1000)});
+  await pending.save(null,{useMasterKey:true});
   return {deviceCode:data.device_code,userCode:data.user_code,verificationUri:data.verification_uri,expiresIn:Number(data.expires_in)||900,interval:Math.max(5,Number(data.interval)||5)};
 });
 Parse.Cloud.define('sentrixGitHubDevicePoll',async r=>{
-  const u=user(r),cfg=githubConfig(),deviceCode=clean(r.params.deviceCode,512,'DEVICE_CODE');
+  const u=user(r),cfg=await githubConfig(),deviceCode=clean(r.params.deviceCode,512,'DEVICE_CODE');
+  const codeHash=crypto.createHash('sha256').update(deviceCode).digest('hex');
+  const pendingQuery=new Parse.Query('SxGitHubDeviceRequest');pendingQuery.equalTo('owner',u);pendingQuery.equalTo('deviceCodeHash',codeHash);
+  const pendingRecord=await pendingQuery.first({useMasterKey:true});
+  if(!pendingRecord||pendingRecord.get('expiresAt').getTime()<=Date.now()) throw new Error('GITHUB_DEVICE_CODE_EXPIRED_OR_NOT_OWNED');
   const body=new URLSearchParams({client_id:cfg.clientId,device_code:deviceCode,grant_type:'urn:ietf:params:oauth:grant-type:device_code'}).toString();
   const response=await fetch('https://github.com/login/oauth/access_token',{method:'POST',headers:{Accept:'application/json','Content-Type':'application/x-www-form-urlencoded'},body,signal:AbortSignal.timeout(15000)});
   const data=await response.json();
   if(data.error==='authorization_pending'||data.error==='slow_down') return {pending:true,interval:data.error==='slow_down'?10:5};
-  if(data.error==='expired_token'||data.error==='access_denied') return {connected:false,reason:data.error==='expired_token'?'GITHUB_DEVICE_CODE_EXPIRED':'GITHUB_ACCESS_DENIED'};
+  if(data.error==='expired_token'||data.error==='access_denied'){await pendingRecord.destroy({useMasterKey:true});return {connected:false,reason:data.error==='expired_token'?'GITHUB_DEVICE_CODE_EXPIRED':'GITHUB_ACCESS_DENIED'};}
   if(!response.ok||!data.access_token) throw new Error('GITHUB_TOKEN_EXCHANGE_FAILED');
   const profile=await githubRequest('https://api.github.com/user',data.access_token);
+  await pendingRecord.destroy({useMasterKey:true});
   if(!profile||!profile.id||!profile.login) throw new Error('GITHUB_PROFILE_INVALID');
   const encrypted=encryptGitHubToken(data.access_token,cfg.key);
   let connection=await githubConnectionFor(u);
@@ -416,7 +428,7 @@ Parse.Cloud.define('sentrixGitHubVerifyRepository',async r=>{
   if(parts.length<2||!/^[-a-zA-Z0-9_.]+$/.test(parts[0])||!/^[-a-zA-Z0-9_.]+$/.test(parts[1])) throw new Error('GITHUB_REPOSITORY_URL_INVALID');
   const fullName=parts[0]+'/'+parts[1].replace(/\.git$/i,'');
   const connection=await githubConnectionFor(u);if(!connection)throw new Error('GITHUB_ACCOUNT_NOT_CONNECTED');
-  const cfg=githubConfig(),token=decryptGitHubToken(connection,cfg.key);
+  const cfg=await githubConfig(),token=decryptGitHubToken(connection,cfg.key);
   const [profile,repo]=await Promise.all([
     githubRequest('https://api.github.com/user',token),
     githubRequest('https://api.github.com/repos/'+encodeURIComponent(parts[0])+'/'+encodeURIComponent(parts[1].replace(/\.git$/i,'')),token)
