@@ -1,3 +1,4 @@
+/* SENTRIX deploy refresh: 2026-11-01 — syntax-checked source. */
 (() => {
 'use strict';
 const cfg=window.APP_BACK4APP,$=id=>document.getElementById(id);
