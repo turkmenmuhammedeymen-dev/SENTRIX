@@ -230,7 +230,8 @@ async function audit(u,d,type){try{await obj('SxAuditEvent',{actor:u,domain:d,ev
 function snippet(d){return '<script async src="https://cdn.jsdelivr.net/gh/turkmenmuhammedeymen-dev/SENTRIX@main/tracker.js" data-site-id="'+d.get('siteId')+'"></script>';}
 function verificationPayload(d){
   const file=d.get('verificationFile')||('sentrix-verify-'+d.get('siteId')+'.txt');
-  const content='sentrix-verification='+d.get('token')+'\n';
+  const content='sentrix-verification='+d.get('token')+'
+';
   return {fileName:file,filePath:'.well-known/'+file,content,publicUrl:'https://'+d.get('host')+'/.well-known/'+file};
 }
 Parse.Cloud.define('sentrixHealth',async()=>({app:'SENTRIX',status:'ok',serverTime:new Date().toISOString()}));
@@ -310,7 +311,10 @@ Parse.Cloud.define('sentrixGetDomainDetails',async r=>{
   const sq=new Parse.Query('SxSecurityEvent');sq.equalTo('domain',d);sq.descending('occurredAt');sq.limit(100);
   const aq=new Parse.Query('SxAsset');aq.equalTo('owner',u);aq.equalTo('host',d.get('host'));aq.limit(100);
   const [pages,security,assets]=await Promise.all([pq.find({useMasterKey:true}),sq.find({useMasterKey:true}),aq.find({useMasterKey:true})]);
-  const lastTrackerEvent=pages.length?pages[0].get('occurredAt'):null;\n  const trackerLastSeenAt=lastTrackerEvent?new Date(lastTrackerEvent):null;\n  const trackerActive=!!(trackerLastSeenAt&&Date.now()-trackerLastSeenAt.getTime()<=24*60*60*1000);\n  return {domain:{id:d.id,url:d.get('url'),host:d.get('host'),verified:d.get('verified')===true,verifiedAt:d.get('verifiedAt')||null,createdAt:d.createdAt},snippet:d.get('verified')===true?snippet(d):null,tracker:{installed:!!trackerLastSeenAt,active:trackerActive,lastSeenAt:trackerLastSeenAt?trackerLastSeenAt.toISOString():null,status:trackerActive?'CONNECTED':trackerLastSeenAt?'STALE':'NOT_DETECTED'},analytics:{pageViews:pages.length,uniqueVisitors:new Set(pages.map(x=>x.get('visitorHash'))).size,recentPages:pages.map(x=>({path:x.get('path'),referrer:x.get('referrer'),occurredAt:x.get('occurredAt')}))},securityEvents:security.map(x=>({source:x.get('source'),eventType:x.get('eventType'),summary:x.get('summary'),occurredAt:x.get('occurredAt')})),assets:assets.map(x=>({id:x.id,url:x.get('url'),status:x.get('status')}))};
+  const lastTrackerEvent=pages.length?pages[0].get('occurredAt'):null;
+  const trackerLastSeenAt=lastTrackerEvent?new Date(lastTrackerEvent):null;
+  const trackerActive=!!(trackerLastSeenAt&&Date.now()-trackerLastSeenAt.getTime()<=24*60*60*1000);
+  return {domain:{id:d.id,url:d.get('url'),host:d.get('host'),verified:d.get('verified')===true,verifiedAt:d.get('verifiedAt')||null,createdAt:d.createdAt},snippet:d.get('verified')===true?snippet(d):null,tracker:{installed:!!trackerLastSeenAt,active:trackerActive,lastSeenAt:trackerLastSeenAt?trackerLastSeenAt.toISOString():null,status:trackerActive?'CONNECTED':trackerLastSeenAt?'STALE':'NOT_DETECTED'},analytics:{pageViews:pages.length,uniqueVisitors:new Set(pages.map(x=>x.get('visitorHash'))).size,recentPages:pages.map(x=>({path:x.get('path'),referrer:x.get('referrer'),occurredAt:x.get('occurredAt')}))},securityEvents:security.map(x=>({source:x.get('source'),eventType:x.get('eventType'),summary:x.get('summary'),occurredAt:x.get('occurredAt')})),assets:assets.map(x=>({id:x.id,url:x.get('url'),status:x.get('status')}))};
 });
 Parse.Cloud.define('sentrixDeleteAccount',async r=>{
   const u=user(r);
