@@ -241,7 +241,7 @@ const sentrixBootstrapOnLoad = ensureSentrixSchemas()
   });
 
 async function awaitSentrixBootstrap() {
-  const state = await awaitSentrixBootstrap();
+  const state = await sentrixBootstrapOnLoad;
   if (!state || state.ok !== true) {
     const cause = state && state.error;
     const error = new Error('SENTRIX_BOOTSTRAP_FAILED: ' + String(cause && cause.message || cause || 'unknown'));
