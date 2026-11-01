@@ -326,6 +326,8 @@ Parse.Cloud.define('sentrixDeleteAccount',async r=>{
     for(const c of classes){const q=new Parse.Query(c);q.containedIn('domain',domains);const rows=await q.find({useMasterKey:true});for(let i=0;i<rows.length;i+=100)await Parse.Object.destroyAll(rows.slice(i,i+100),{useMasterKey:true});}
   }
   for(const c of ['SxAssessment']){const q=new Parse.Query(c);q.equalTo('owner',u);const rows=await q.find({useMasterKey:true});for(let i=0;i<rows.length;i+=100)await Parse.Object.destroyAll(rows.slice(i,i+100),{useMasterKey:true});}
+  for(const c of ['SxGitHubDeviceRequest','SxGitHubRepo','SxGitHubConnection']){const q=new Parse.Query(c);q.equalTo('owner',u);const rows=await q.find({useMasterKey:true});for(let i=0;i<rows.length;i+=100)await Parse.Object.destroyAll(rows.slice(i,i+100),{useMasterKey:true});}
+  const actorAudit=new Parse.Query('SxAuditEvent');actorAudit.equalTo('actor',u);const actorEvents=await actorAudit.find({useMasterKey:true});for(let i=0;i<actorEvents.length;i+=100)await Parse.Object.destroyAll(actorEvents.slice(i,i+100),{useMasterKey:true});
   for(const rows of [assets,domains])for(let i=0;i<rows.length;i+=100)await Parse.Object.destroyAll(rows.slice(i,i+100),{useMasterKey:true});
   await u.destroy({useMasterKey:true});
   return {deleted:true};
