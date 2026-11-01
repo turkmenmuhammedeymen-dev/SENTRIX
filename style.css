@@ -19,3 +19,4 @@
 #githubRepoForm{margin-top:22px}
 #githubRepoList .domain-card{align-items:center}
 @media(max-width:760px){.github-connect{align-items:flex-start;flex-direction:column}.github-actions{width:100%}.github-actions .btn,.github-actions a{flex:1;text-align:center}.github-code{letter-spacing:.1em}}
+\n/* Live tracker verification status */\n.tracker-status{padding:20px;border:1px solid var(--line);border-radius:16px;background:linear-gradient(145deg,#14243b,#0c1729)}.tracker-status.is-connected{border-color:#65e6ae88;background:linear-gradient(145deg,#102b29,#0c1c29)}.tracker-state{display:inline-flex;align-items:center;gap:8px;padding:9px 13px;border-radius:999px;font-weight:800;font-size:14px}.tracker-state.connected{color:#65e6ae;background:#65e6ae18}.tracker-state.pending{color:#ffd68a;background:#ffd68a18}.tracker-status .btn{margin:8px 8px 0 0}\n
