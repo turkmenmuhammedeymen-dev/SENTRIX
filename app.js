@@ -136,7 +136,7 @@ async function startGitHubDeviceFlow(){
   const r=await api('sentrixGitHubDeviceStart');githubDeviceCode=r.deviceCode;
   $('githubUserCode').textContent=r.userCode;$('githubDevicePanel').classList.remove('hidden');
   $('githubDeviceNotice').textContent='Kod '+Math.ceil(r.expiresIn/60)+' dakika geçerli. GitHub sayfasında kodu onayla, sonra SENTRIX’e dönüp kontrol et.';
-  window.open(r.verificationUri,'_blank','noopener,noreferrer');
+  $('githubVerifyLink').href=r.verificationUri;
  }catch(e){status('githubRepoNotice','GitHub bağlantısı başlatılamadı: '+message(e));}
  finally{b.disabled=false;b.textContent='GitHub hesabını bağla';}
 }
