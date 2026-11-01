@@ -245,7 +245,7 @@ Parse.Cloud.define('sentrixDeleteDomain',async r=>{
   const u=user(r),d=await domainFor(u,r.params.domainId);
   if(r.params.confirmation!==d.get('host')) throw new Error('DOMAIN_DELETE_CONFIRMATION_REQUIRED');
   const related=[];
-  for(const name of ['SxPageEvent','SxSecurityEvent','SxAuditEvent']){
+  for(const name of ['SxPageEvent','SxSecurityEvent','SxAuditEvent','SxInteractionEvent','SxPerformanceEvent','SxUptimeCheck']){
     const q=new Parse.Query(name);q.equalTo('domain',d);
     const rows=await q.find({useMasterKey:true});related.push(...rows);
   }
@@ -330,7 +330,7 @@ Parse.Cloud.define('sentrixDeleteAccount',async r=>{
   const assets=await ownedAssets.find({useMasterKey:true});
   const domainIds=domains.map(d=>d.id);
   if(domainIds.length){
-    const classes=['SxPageEvent','SxSecurityEvent','SxAuditEvent'];
+    const classes=['SxPageEvent','SxSecurityEvent','SxAuditEvent','SxInteractionEvent','SxPerformanceEvent','SxUptimeCheck'];
     for(const c of classes){const q=new Parse.Query(c);q.containedIn('domain',domains);const rows=await q.find({useMasterKey:true});for(let i=0;i<rows.length;i+=100)await Parse.Object.destroyAll(rows.slice(i,i+100),{useMasterKey:true});}
   }
   for(const c of ['SxAssessment']){const q=new Parse.Query(c);q.equalTo('owner',u);const rows=await q.find({useMasterKey:true});for(let i=0;i<rows.length;i+=100)await Parse.Object.destroyAll(rows.slice(i,i+100),{useMasterKey:true});}
@@ -475,7 +475,7 @@ Parse.Cloud.define('sentrixGitHubDisconnect',async r=>{
   return {disconnected:true};
 });
 
-['SxDomain','SxAuditEvent','SxPageEvent','SxSecurityEvent','SxAssessment','SxAsset','SxGitHubDeviceRequest','SxGitHubConnection','SxGitHubRepo'].forEach(c=>Parse.Cloud.beforeSave(c,r=>{if(!r.master)throw new Error('SERVER_WRITE_ONLY');}));
+['SxDomain','SxAuditEvent','SxPageEvent','SxSecurityEvent','SxAssessment','SxAsset','SxGitHubDeviceRequest','SxGitHubConnection','SxGitHubRepo','SxInteractionEvent','SxPerformanceEvent','SxUptimeCheck'].forEach(c=>Parse.Cloud.beforeSave(c,r=>{if(!r.master)throw new Error('SERVER_WRITE_ONLY');}));
 
 
 async function sentrixVerifiedEventDomain(siteId,host){const q=new Parse.Query('SxDomain');q.equalTo('siteId',clean(siteId,64,'SITE_ID'));q.equalTo('host',clean(host,253,'HOST').toLowerCase());q.equalTo('verified',true);const d=await q.first({useMasterKey:true});if(!d)throw new Error('DOMAIN_NOT_VERIFIED');return d;}
