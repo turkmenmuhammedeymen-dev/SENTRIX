@@ -230,8 +230,7 @@ async function audit(u,d,type){try{await obj('SxAuditEvent',{actor:u,domain:d,ev
 function snippet(d){return '<script async src="https://cdn.jsdelivr.net/gh/turkmenmuhammedeymen-dev/SENTRIX@main/tracker.js" data-site-id="'+d.get('siteId')+'"></script>';}
 function verificationPayload(d){
   const file=d.get('verificationFile')||('sentrix-verify-'+d.get('siteId')+'.txt');
-  const content='sentrix-verification='+d.get('token')+'
-';
+  const content='sentrix-verification='+d.get('token')+'\n';
   return {fileName:file,filePath:'.well-known/'+file,content,publicUrl:'https://'+d.get('host')+'/.well-known/'+file};
 }
 Parse.Cloud.define('sentrixHealth',async()=>({app:'SENTRIX',status:'ok',serverTime:new Date().toISOString()}));
