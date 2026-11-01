@@ -7,7 +7,7 @@ const dns = require('dns').promises;
 const net = require('net');
 const user = r => { if (!r.user) throw new Error('AUTH_REQUIRED'); return r.user; };
 const clean = (v,n,k) => { if(typeof v!=='string'||!v.trim()||v.trim().length>n) throw new Error(k+'_INVALID'); return v.trim(); };
-function urlInfo(v){let u;try{u=new URL(clean(v,2048,'URL'));}catch(e){throw new Error('URL_INVALID');}if(!['http:','https:'].includes(u.protocol)||u.username||u.password)throw new Error('URL_INVALID');u.hash='';return {url:u.toString().replace(/\/$/,''),host:u.hostname.toLowerCase()};}
+function urlInfo(v){let raw=clean(v,2048,'URL');if(!/^[a-z][a-z0-9+.-]*:\/\//i.test(raw))raw='https://'+raw;let u;try{u=new URL(raw);}catch(e){throw new Error('URL_INVALID');}if(!['http:','https:'].includes(u.protocol)||u.username||u.password||!u.hostname||!u.hostname.includes('.')||u.hostname.length>253)throw new Error('URL_INVALID');u.hash='';u.hostname=u.hostname.toLowerCase();return {url:u.toString().replace(/\/$/,''),host:u.hostname};}
 
 // SENTRIX FEATURE REGISTRY — the single source of truth for persisted data.
 // Every new feature must register its schema requirements here before release.
@@ -206,6 +206,26 @@ function verificationPayload(d){
 }
 Parse.Cloud.define('sentrixHealth',async()=>({app:'SENTRIX',status:'ok',serverTime:new Date().toISOString()}));
 Parse.Cloud.define('sentrixCreateDomain',async r=>{await sentrixBootstrapOnLoad;const u=user(r),p=urlInfo(r.params.url),q=new Parse.Query('SxDomain');q.equalTo('host',p.host);const old=await q.first({useMasterKey:true});if(old){if(old.get('owner').id!==u.id)throw new Error('DOMAIN_ALREADY_CLAIMED');return {domainId:old.id,host:p.host,verified:old.get('verified')===true,verification:verificationPayload(old)};}const token=crypto.randomBytes(32).toString('hex'),siteId=crypto.randomBytes(16).toString('hex'),verificationFile='sentrix-verify-'+siteId+'.txt';const d=obj('SxDomain',{owner:u,url:p.url,host:p.host,token,verificationFile,verificationPath:'/.well-known/'+verificationFile,verified:false,siteId});await d.save(null,{useMasterKey:true});await audit(u,d,'domain.created');return {domainId:d.id,host:p.host,verified:false,verification:verificationPayload(d)};});
+Parse.Cloud.define('sentrixDeleteDomain',async r=>{
+  await sentrixBootstrapOnLoad;
+  const u=user(r),d=await domainFor(u,r.params.domainId);
+  if(r.params.confirmation!==d.get('host')) throw new Error('DOMAIN_DELETE_CONFIRMATION_REQUIRED');
+  const related=[];
+  for(const name of ['SxPageEvent','SxSecurityEvent','SxAuditEvent']){
+    const q=new Parse.Query(name);q.equalTo('domain',d);
+    const rows=await q.find({useMasterKey:true});related.push(...rows);
+  }
+  const aq=new Parse.Query('SxAsset');aq.equalTo('owner',u);aq.equalTo('host',d.get('host'));
+  const assets=await aq.find({useMasterKey:true});
+  for(const rows of [related,assets]) for(let i=0;i<rows.length;i+=100) await Parse.Object.destroyAll(rows.slice(i,i+100),{useMasterKey:true});
+  const assess=new Parse.Query('SxAssessment');assess.equalTo('owner',u);
+  const assessments=await assess.find({useMasterKey:true});
+  const assetIds=new Set(assets.map(x=>x.id));
+  const linked=assessments.filter(x=>x.get('asset')&&assetIds.has(x.get('asset').id));
+  for(let i=0;i<linked.length;i+=100) await Parse.Object.destroyAll(linked.slice(i,i+100),{useMasterKey:true});
+  await d.destroy({useMasterKey:true});
+  return {deleted:true,domainId:d.id};
+});
 Parse.Cloud.define('sentrixListDomains',async r=>{await sentrixBootstrapOnLoad;const u=user(r),q=new Parse.Query('SxDomain');q.equalTo('owner',u);q.descending('createdAt');q.limit(100);return (await q.find({useMasterKey:true})).map(d=>({id:d.id,url:d.get('url'),host:d.get('host'),verified:d.get('verified')===true,verification:verificationPayload(d),snippet:d.get('verified')===true?snippet(d):null}));});
 async function isPublicVerificationHost(host) {
   const h=String(host||'').toLowerCase().replace(/^\[|\]$/g,'');
