@@ -46,7 +46,9 @@ function sendAttempt(payload,attempt){
       if(!response.ok||data.error){
         var message=(data.error&&data.error.message)||data.error||('HTTP_'+response.status);
         report('Page-view event rejected: '+message);
-        if(attempt<3)setTimeout(function(){sendAttempt(payload,attempt+1);},1500*attempt);
+        // A 4xx response (especially DOMAIN_NOT_VERIFIED) is a permanent rejection,
+        // not a network failure. Retrying only creates duplicate console noise.
+        if(response.status>=500&&attempt<3)setTimeout(function(){sendAttempt(payload,attempt+1);},1500*attempt);
         return;
       }
       report('Page-view event accepted for '+payload.host+' '+payload.path);
