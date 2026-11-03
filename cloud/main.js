@@ -257,8 +257,11 @@ async function audit(u,d,type){try{await obj('SxAuditEvent',{actor:u,domain:d,ev
 function snippet(d){return '<script async src="https://cdn.jsdelivr.net/gh/turkmenmuhammedeymen-dev/SENTRIX@main/tracker.js" data-site-id="'+d.get('siteId')+'"></script>';}
 function verificationPayload(d){
   const file=d.get('verificationFile')||('sentrix-verify-'+d.get('siteId')+'.txt');
-  const content='sentrix-verification='+d.get('token')+'\n';
-  return {fileName:file,filePath:'.well-known/'+file,content,publicUrl:'https://'+d.get('host')+'/.well-known/'+file};
+  const content='sentrix-verification='+d.get('token')+'\\n';
+  let basePath='';
+  try { basePath=new URL(d.get('url')||('https://'+d.get('host'))).pathname.replace(/\\/+$/,''); } catch (_) {}
+  const filePath=(basePath||'')+'/'+file;
+  return {fileName:file,filePath:filePath,content,publicUrl:'https://'+d.get('host')+filePath};
 }
 Parse.Cloud.define('sentrixHealth',async()=>({app:'SENTRIX',status:'ok',serverTime:new Date().toISOString()}));
 Parse.Cloud.define('sentrixCreateDomain',async r=>{await awaitSentrixBootstrap();const u=user(r),p=urlInfo(r.params.url),q=new Parse.Query('SxDomain');q.equalTo('host',p.host);const old=await q.first({useMasterKey:true});if(old){if(old.get('owner').id!==u.id)throw new Error('DOMAIN_ALREADY_CLAIMED');return {domainId:old.id,host:p.host,verified:old.get('verified')===true,verification:verificationPayload(old)};}const token=crypto.randomBytes(32).toString('hex'),siteId=crypto.randomBytes(16).toString('hex'),verificationFile='sentrix-verify-'+siteId+'.txt';const d=obj('SxDomain',{owner:u,url:p.url,host:p.host,token,verificationFile,verificationPath:'/.well-known/'+verificationFile,verified:false,siteId});await d.save(null,{useMasterKey:true});await audit(u,d,'domain.created');return {domainId:d.id,host:p.host,verified:false,verification:verificationPayload(d)};});
@@ -294,8 +297,11 @@ async function isPublicVerificationHost(host) {
   const records=await dns.lookup(h,{all:true,verbatim:true});
   return records.length>0 && records.every(x=>isPublicVerificationHost(x.address));
 }
-async function fetchVerificationFile(host,fileName) {
+async function fetchVerificationFile(host,fileName,basePath) {
   if(!await isPublicVerificationHost(host)) throw new Error('VERIFICATION_HOST_NOT_PUBLIC');
+  const prefix=String(basePath||'').replace(/\\/+$/,'');
+  const file=encodeURIComponent(fileName);
+  const paths=Array.from(new Set([prefix+'/.well-known/'+file,prefix+'/'+file,'/.well-known/'+file,'/'+file]));
   const paths=['/.well-known/'+encodeURIComponent(fileName),'/'+encodeURIComponent(fileName)];
   for(const path of paths) {
     let url='https://'+host+path;
@@ -320,7 +326,7 @@ Parse.Cloud.define('sentrixVerifyDomain',async r=>{
   const u=user(r),d=await domainFor(u,r.params.domainId),vf=verificationPayload(d);
   if(d.get('verified')) return {verified:true,snippet:snippet(d),verification:vf};
   let body;
-  try { body=await fetchVerificationFile(d.get('host'),vf.fileName); }
+  try { body=await fetchVerificationFile(d.get('host'),vf.fileName,(new URL(d.get('url')||('https://'+d.get('host')))).pathname); }
   catch(e) { return {verified:false,reason:e.message==='VERIFICATION_HOST_NOT_PUBLIC'?'HOST_NOT_PUBLIC':'VERIFICATION_FETCH_FAILED',verification:vf}; }
   const expected=('sentrix-verification='+d.get('token')).trim();
   if(body===null||body!==expected) return {verified:false,reason:'FILE_NOT_FOUND_OR_CONTENT_MISMATCH',verification:vf};
